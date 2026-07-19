@@ -1,0 +1,482 @@
+{
+  "app": {
+    "name": "QuoteFlow AI Dashboard",
+    "description": "Contractor dashboard for managing quotes, appointments, materials, and payments",
+    "version": "1.0.0"
+  },
+  "resources": [
+    {
+      "name": "quoteflow_api",
+      "type": "RESTQuery",
+      "baseURL": "{{window.location.origin}}/dashboard",
+      "headers": {
+        "Authorization": "Bearer {{localStorage.getItem('api_key')}}",
+        "Content-Type": "application/json"
+      }
+    }
+  ],
+  "queries": [
+    {
+      "name": "getMetrics",
+      "resource": "quoteflow_api",
+      "method": "GET",
+      "path": "/metrics",
+      "transformer": "return data"
+    },
+    {
+      "name": "getQuotes",
+      "resource": "quoteflow_api",
+      "method": "GET",
+      "path": "/quotes",
+      "params": {
+        "status": "{{quoteStatusFilter.value}}",
+        "trade": "{{tradeFilter.value}}",
+        "limit": 50
+      }
+    },
+    {
+      "name": "getAppointments",
+      "resource": "quoteflow_api",
+      "method": "GET",
+      "path": "/appointments",
+      "params": {
+        "date": "{{appointmentDatePicker.value}}"
+      }
+    },
+    {
+      "name": "getPickups",
+      "resource": "quoteflow_api",
+      "method": "GET",
+      "path": "/materials/pickups"
+    },
+    {
+      "name": "getRevenue",
+      "resource": "quoteflow_api",
+      "method": "GET",
+      "path": "/revenue",
+      "params": {
+        "period": "{{revenuePeriodSelect.value}}",
+        "days": 30
+      }
+    },
+    {
+      "name": "getContractors",
+      "resource": "quoteflow_api",
+      "method": "GET",
+      "path": "/contractors"
+    },
+    {
+      "name": "getTradeBreakdown",
+      "resource": "quoteflow_api",
+      "method": "GET",
+      "path": "/trades/breakdown"
+    },
+    {
+      "name": "updateQuoteStatus",
+      "resource": "quoteflow_api",
+      "method": "POST",
+      "path": "/quotes/{{selectedQuote.value}}/status",
+      "body": {
+        "status": "{{newStatus.value}}"
+      }
+    }
+  ],
+  "components": {
+    "layout": {
+      "type": "tabbedContainer",
+      "tabs": [
+        {
+          "name": "Overview",
+          "components": [
+            {
+              "type": "statistic",
+              "title": "Quotes Today",
+              "value": "{{getMetrics.data.total_quotes_today}}",
+              "trend": "+12%"
+            },
+            {
+              "type": "statistic",
+              "title": "Conversion Rate",
+              "value": "{{getMetrics.data.conversion_rate}}%",
+              "trend": "+5%"
+            },
+            {
+              "type": "statistic",
+              "title": "Revenue This Month",
+              "value": "${{getMetrics.data.revenue_this_month}}",
+              "trend": "+23%"
+            },
+            {
+              "type": "statistic",
+              "title": "Pending Pickups",
+              "value": "{{getMetrics.data.pending_pickups}}",
+              "color": "orange"
+            },
+            {
+              "type": "chart",
+              "chartType": "line",
+              "title": "Revenue Trend",
+              "data": "{{getRevenue.data}}",
+              "xAxis": "date",
+              "yAxis": "revenue",
+              "groupBy": "period"
+            },
+            {
+              "type": "chart",
+              "chartType": "pie",
+              "title": "Quotes by Trade",
+              "data": "{{getTradeBreakdown.data}}",
+              "label": "trade",
+              "value": "quote_count"
+            }
+          ]
+        },
+        {
+          "name": "Quotes",
+          "components": [
+            {
+              "type": "select",
+              "label": "Status",
+              "options": [
+                "all",
+                "pending",
+                "accepted",
+                "rejected",
+                "expired"
+              ],
+              "value": "all",
+              "id": "quoteStatusFilter"
+            },
+            {
+              "type": "select",
+              "label": "Trade",
+              "options": [
+                "all",
+                "landscaping",
+                "roofing",
+                "plumbing",
+                "autobody",
+                "electrical"
+              ],
+              "value": "all",
+              "id": "tradeFilter"
+            },
+            {
+              "type": "table",
+              "title": "All Quotes",
+              "data": "{{getQuotes.data}}",
+              "columns": [
+                {
+                  "key": "quote_id",
+                  "title": "Quote #",
+                  "width": 120
+                },
+                {
+                  "key": "customer_phone",
+                  "title": "Customer",
+                  "width": 150
+                },
+                {
+                  "key": "trade",
+                  "title": "Trade",
+                  "width": 120
+                },
+                {
+                  "key": "total",
+                  "title": "Total",
+                  "format": "currency",
+                  "width": 100
+                },
+                {
+                  "key": "status",
+                  "title": "Status",
+                  "tag": true,
+                  "width": 100
+                },
+                {
+                  "key": "payment_status",
+                  "title": "Payment",
+                  "tag": true,
+                  "width": 100
+                },
+                {
+                  "key": "materials_ordered",
+                  "title": "Materials",
+                  "format": "boolean",
+                  "width": 100
+                },
+                {
+                  "key": "appointment_scheduled",
+                  "title": "Scheduled",
+                  "format": "boolean",
+                  "width": 100
+                },
+                {
+                  "key": "created_at",
+                  "title": "Date",
+                  "format": "datetime",
+                  "width": 150
+                }
+              ],
+              "rowActions": [
+                {
+                  "label": "View",
+                  "action": "openModal('quoteDetail')"
+                },
+                {
+                  "label": "Accept",
+                  "action": "updateQuoteStatus.trigger({status: 'accepted'})"
+                },
+                {
+                  "label": "Reject",
+                  "action": "updateQuoteStatus.trigger({status: 'rejected'})"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Appointments",
+          "components": [
+            {
+              "type": "datePicker",
+              "label": "Select Date",
+              "value": "{{new Date().toISOString().split('T')[0]}}",
+              "id": "appointmentDatePicker"
+            },
+            {
+              "type": "calendar",
+              "title": "Job Schedule",
+              "data": "{{getAppointments.data}}",
+              "eventTitle": "{{item.customer_name}} - {{item.trade}}",
+              "eventTime": "{{item.time_slot}}",
+              "eventDuration": "{{item.duration_hours}}"
+            },
+            {
+              "type": "table",
+              "title": "Daily Schedule",
+              "data": "{{getAppointments.data}}",
+              "columns": [
+                {
+                  "key": "time_slot",
+                  "title": "Time",
+                  "width": 100
+                },
+                {
+                  "key": "customer_name",
+                  "title": "Customer",
+                  "width": 150
+                },
+                {
+                  "key": "trade",
+                  "title": "Trade",
+                  "width": 120
+                },
+                {
+                  "key": "duration_hours",
+                  "title": "Hours",
+                  "width": 80
+                },
+                {
+                  "key": "materials_store",
+                  "title": "Store",
+                  "width": 150
+                },
+                {
+                  "key": "materials_picked_up",
+                  "title": "Picked Up",
+                  "format": "boolean",
+                  "width": 100
+                },
+                {
+                  "key": "quote_total",
+                  "title": "Value",
+                  "format": "currency",
+                  "width": 100
+                },
+                {
+                  "key": "payment_status",
+                  "title": "Paid",
+                  "tag": true,
+                  "width": 80
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Materials",
+          "components": [
+            {
+              "type": "info",
+              "title": "Today's Pickups",
+              "message": "{{getPickups.data.length}} material orders ready for pickup"
+            },
+            {
+              "type": "table",
+              "title": "Pending Pickups",
+              "data": "{{getPickups.data}}",
+              "columns": [
+                {
+                  "key": "customer_name",
+                  "title": "Customer",
+                  "width": 150
+                },
+                {
+                  "key": "trade",
+                  "title": "Trade",
+                  "width": 120
+                },
+                {
+                  "key": "job_date",
+                  "title": "Job Date",
+                  "width": 120
+                },
+                {
+                  "key": "store_name",
+                  "title": "Store",
+                  "width": 150
+                },
+                {
+                  "key": "store_address",
+                  "title": "Address",
+                  "width": 200
+                },
+                {
+                  "key": "pickup_time",
+                  "title": "Pickup By",
+                  "width": 120
+                },
+                {
+                  "key": "items_count",
+                  "title": "Items",
+                  "width": 80
+                },
+                {
+                  "key": "total",
+                  "title": "Total",
+                  "format": "currency",
+                  "width": 100
+                },
+                {
+                  "key": "confirmed",
+                  "title": "Confirmed",
+                  "format": "boolean",
+                  "width": 100
+                }
+              ],
+              "rowActions": [
+                {
+                  "label": "Confirm Pickup",
+                  "action": "confirmPickup.trigger()"
+                },
+                {
+                  "label": "View Order",
+                  "action": "openModal('orderDetail')"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Contractors",
+          "components": [
+            {
+              "type": "table",
+              "title": "All Contractors",
+              "data": "{{getContractors.data}}",
+              "columns": [
+                {
+                  "key": "business_name",
+                  "title": "Business",
+                  "width": 200
+                },
+                {
+                  "key": "email",
+                  "title": "Email",
+                  "width": 200
+                },
+                {
+                  "key": "phone",
+                  "title": "Phone",
+                  "width": 150
+                },
+                {
+                  "key": "plan_name",
+                  "title": "Plan",
+                  "tag": true,
+                  "width": 100
+                },
+                {
+                  "key": "is_active",
+                  "title": "Active",
+                  "format": "boolean",
+                  "width": 80
+                },
+                {
+                  "key": "in_trial",
+                  "title": "Trial",
+                  "format": "boolean",
+                  "width": 80
+                },
+                {
+                  "key": "trial_ends",
+                  "title": "Trial Ends",
+                  "width": 120
+                },
+                {
+                  "key": "quotes_used",
+                  "title": "Quotes Used",
+                  "width": 100
+                },
+                {
+                  "key": "quotes_limit",
+                  "title": "Limit",
+                  "width": 100
+                },
+                {
+                  "key": "mrr",
+                  "title": "MRR",
+                  "format": "currency",
+                  "width": 100
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "settings": {
+    "theme": "light",
+    "primaryColor": "#2563eb",
+    "showHeader": true,
+    "headerTitle": "QuoteFlow AI",
+    "navigation": {
+      "showLogo": true,
+      "logoURL": "https://quoteflow.ai/logo.png",
+      "items": [
+        {
+          "label": "Dashboard",
+          "page": "overview"
+        },
+        {
+          "label": "Quotes",
+          "page": "quotes"
+        },
+        {
+          "label": "Schedule",
+          "page": "appointments"
+        },
+        {
+          "label": "Materials",
+          "page": "materials"
+        },
+        {
+          "label": "Settings",
+          "page": "settings"
+        }
+      ]
+    }
+  }
+}
