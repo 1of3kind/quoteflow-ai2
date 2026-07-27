@@ -1,11 +1,21 @@
-"""Manages multi-channel customer conversations (SMS, email, voice)."""
+"""Manages multi-channel customer conversations (SMS, email, voice).
 
-import json
+Postgres-backed — conversations survive restarts and scale across instances.
+"""
+
 import logging
 from typing import Dict, List, Optional
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from enum import Enum
+
+from sqlalchemy import select, update, delete, and_
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from core.database import (
+    ConversationModel, MessageModel, PhotoModel,
+    AsyncSessionLocal,
+)
 
 logger = logging.getLogger("conversation_manager")
 
@@ -87,58 +97,173 @@ class Conversation:
             "last_activity": self.last_activity,
         }
 
+    @classmethod
+    def from_model(cls, model: ConversationModel) -> "Conversation":
+        """Hydrate a domain Conversation from the DB row + its relationships."""
+        messages = [
+            Message(
+                channel=Channel(m.channel),
+                direction=m.direction,
+                content=m.content,
+                timestamp=m.timestamp.isoformat() if m.timestamp else None,
+            )
+            for m in (model.messages or [])
+        ]
+        photos = [p.url for p in (model.photos or [])]
+
+        return cls(
+            customer_id=model.id,
+            customer_phone=model.customer_phone,
+            customer_email=model.customer_email,
+            trade=model.trade,
+            stage=ConversationStage(model.stage),
+            messages=messages,
+            photos_received=photos,
+            quote_id=model.quote_id,
+            appointment_id=model.appointment_id,
+            created_at=model.created_at.isoformat() if model.created_at else None,
+            last_activity=model.last_activity.isoformat() if model.last_activity else None,
+        )
+
 
 class ConversationManager:
-    """Manages all customer conversations across channels."""
+    """Manages all customer conversations — backed by Postgres."""
 
-    def __init__(self):
-        self.conversations: Dict[str, Conversation] = {}
-
-    def get_or_create(
-        self, customer_id: str,
+    async def get_or_create(
+        self,
+        customer_id: str,
         phone: Optional[str] = None,
         email: Optional[str] = None,
     ) -> Conversation:
-        if customer_id not in self.conversations:
-            self.conversations[customer_id] = Conversation(
-                customer_id=customer_id,
-                customer_phone=phone,
-                customer_email=email,
-                trade=None,
-                stage=ConversationStage.GREETING,
+        async with AsyncSessionLocal() as session:
+            result = await session.execute(
+                select(ConversationModel).where(ConversationModel.id == customer_id)
             )
-            logger.info(f"Created conversation for {customer_id}")
-        return self.conversations[customer_id]
+            model = result.scalar_one_or_none()
 
-    def get(self, customer_id: str) -> Optional[Conversation]:
-        return self.conversations.get(customer_id)
+            if model is None:
+                now = datetime.utcnow()
+                model = ConversationModel(
+                    id=customer_id,
+                    customer_phone=phone,
+                    customer_email=email,
+                    trade=None,
+                    stage="greeting",
+                    created_at=now,
+                    last_activity=now,
+                )
+                session.add(model)
+                await session.commit()
+                await session.refresh(model)
+                logger.info(f"Created conversation for {customer_id}")
+            elif phone and not model.customer_phone:
+                model.customer_phone = phone
+                await session.commit()
+            elif email and not model.customer_email:
+                model.customer_email = email
+                await session.commit()
 
-    def update_stage(self, customer_id: str, stage: ConversationStage):
-        conv = self.conversations.get(customer_id)
-        if conv:
-            conv.stage = stage
-            conv.last_activity = datetime.utcnow().isoformat()
+            # Re-fetch with relationships
+            result = await session.execute(
+                select(ConversationModel).where(ConversationModel.id == customer_id)
+            )
+            model = result.scalar_one()
+            return Conversation.from_model(model)
 
-    def get_stale_conversations(self, hours: int = 24) -> List[Conversation]:
+    async def get(self, customer_id: str) -> Optional[Conversation]:
+        async with AsyncSessionLocal() as session:
+            result = await session.execute(
+                select(ConversationModel).where(ConversationModel.id == customer_id)
+            )
+            model = result.scalar_one_or_none()
+            return Conversation.from_model(model) if model else None
+
+    async def update_stage(self, customer_id: str, stage: ConversationStage):
+        async with AsyncSessionLocal() as session:
+            await session.execute(
+                update(ConversationModel)
+                .where(ConversationModel.id == customer_id)
+                .values(stage=stage.value, last_activity=datetime.utcnow())
+            )
+            await session.commit()
+
+    async def add_message(self, customer_id: str, msg: Message):
+        """Persist a message to the conversation."""
+        async with AsyncSessionLocal() as session:
+            model = MessageModel(
+                conversation_id=customer_id,
+                channel=msg.channel.value,
+                direction=msg.direction,
+                content=msg.content,
+                timestamp=datetime.utcnow(),
+            )
+            session.add(model)
+            await session.execute(
+                update(ConversationModel)
+                .where(ConversationModel.id == customer_id)
+                .values(last_activity=datetime.utcnow())
+            )
+            await session.commit()
+
+    async def add_photos(self, customer_id: str, urls: List[str]):
+        """Persist photo URLs to the conversation."""
+        async with AsyncSessionLocal() as session:
+            for url in urls:
+                photo = PhotoModel(conversation_id=customer_id, url=url)
+                session.add(photo)
+            await session.execute(
+                update(ConversationModel)
+                .where(ConversationModel.id == customer_id)
+                .values(last_activity=datetime.utcnow())
+            )
+            await session.commit()
+
+    async def set_quote_id(self, customer_id: str, quote_id: str):
+        async with AsyncSessionLocal() as session:
+            await session.execute(
+                update(ConversationModel)
+                .where(ConversationModel.id == customer_id)
+                .values(quote_id=quote_id, last_activity=datetime.utcnow())
+            )
+            await session.commit()
+
+    async def get_stale_conversations(self, hours: int = 24) -> List[Conversation]:
         cutoff = datetime.utcnow() - timedelta(hours=hours)
-        stale = []
-        for conv in self.conversations.values():
-            last = datetime.fromisoformat(conv.last_activity)
-            if last < cutoff and conv.stage not in [ConversationStage.BOOKED, ConversationStage.CLOSED]:
-                stale.append(conv)
-        return stale
+        async with AsyncSessionLocal() as session:
+            result = await session.execute(
+                select(ConversationModel).where(
+                    and_(
+                        ConversationModel.last_activity < cutoff,
+                        ConversationModel.stage.notin_(["booked", "closed"]),
+                    )
+                )
+            )
+            models = result.scalars().all()
+            return [Conversation.from_model(m) for m in models]
 
-    def get_active_count(self) -> int:
-        return len([
-            c for c in self.conversations.values()
-            if c.stage not in [ConversationStage.BOOKED, ConversationStage.CLOSED]
-        ])
+    async def get_active_count(self) -> int:
+        async with AsyncSessionLocal() as session:
+            result = await session.execute(
+                select(ConversationModel).where(
+                    ConversationModel.stage.notin_(["booked", "closed"])
+                )
+            )
+            return len(result.scalars().all())
 
-    def get_conversion_rate(self) -> float:
-        total = len(self.conversations)
-        booked = len([c for c in self.conversations.values() if c.stage == ConversationStage.BOOKED])
-        return (booked / total * 100) if total > 0 else 0.0
+    async def get_conversion_rate(self) -> float:
+        async with AsyncSessionLocal() as session:
+            total_result = await session.execute(select(ConversationModel))
+            total = len(total_result.scalars().all())
+            booked_result = await session.execute(
+                select(ConversationModel).where(ConversationModel.stage == "booked")
+            )
+            booked = len(booked_result.scalars().all())
+            return (booked / total * 100) if total > 0 else 0.0
 
+
+# ---------------------------------------------------------------------------
+# Response templates (unchanged)
+# ---------------------------------------------------------------------------
 
 RESPONSE_TEMPLATES = {
     "greeting": (
@@ -147,7 +272,7 @@ RESPONSE_TEMPLATES = {
         "Reply with: landscaping, roofing, plumbing, autobody, or electrical"
     ),
     "trade_select": (
-        "Great! To give you an accurate quote, I\'ll need photos of the work area. "
+        "Great! To give you an accurate quote, I'll need photos of the work area. "
         "Please send {required_photos}.\n\n"
         "You can text or email them to this number/address."
     ),
