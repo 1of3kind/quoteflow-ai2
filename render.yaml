@@ -1,4 +1,11 @@
 services:
+  # PostgreSQL for persistent storage (conversations, quotes, accounts)
+  - type: pserv
+    name: quoteflow-db
+    runtime: postgres
+    plan: free
+    ipAllowList: []
+
   # Web service: FastAPI application
   - type: web
     name: quoteflow-api
@@ -12,6 +19,11 @@ services:
         value: /opt/render/project/src
       - key: FEEDBACK_API_KEY
         generateValue: true
+      - key: DATABASE_URL
+        fromService:
+          type: pserv
+          name: quoteflow-db
+          property: connectionString
       - key: OPENAI_API_KEY
         sync: false
       - key: TWILIO_ACCOUNT_SID
@@ -52,6 +64,11 @@ services:
           type: web
           name: quoteflow-api
           property: env.FEEDBACK_API_KEY
+      - key: DATABASE_URL
+        fromService:
+          type: pserv
+          name: quoteflow-db
+          property: connectionString
       - key: OPENAI_API_KEY
         sync: false
       - key: TWILIO_ACCOUNT_SID
