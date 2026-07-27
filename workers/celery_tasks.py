@@ -56,7 +56,8 @@ def process_photos_and_quote(self, customer_id: str, photo_urls: List[str], trad
         if not local_paths:
             raise self.retry(countdown=30)
 
-        analyzer = get_analyzer(os.getenv("OPENAI_API_KEY"), mock=not os.getenv("OPENAI_API_KEY"))
+        api_key = os.getenv("OPENAI_API_KEY")
+        analyzer = get_analyzer(api_key, mock=(not api_key))
         analysis = asyncio.run(analyzer.analyze_batch(local_paths, trade))
 
         calculator = QuoteCalculator()
