@@ -27,16 +27,26 @@ class ImageAnalysis:
 
 
 class VisionAnalyzer:
-    """Analyzes work photos using AI vision (OpenAI GPT-4V or local model)."""
+    """Analyzes work photos using AI vision (OpenAI GPT-4o)."""
 
     def __init__(self, api_key: Optional[str] = None):
         self.api_key = api_key or ""
-        self.model = "gpt-4-vision-preview"
+        self.model = "gpt-4o"
         self.base_url = "https://api.openai.com/v1/chat/completions"
 
     async def analyze_image(self, image_path: str, trade: str) -> ImageAnalysis:
-        """Analyze a single work photo."""
-        encoded = self._encode_image(image_path)
+        """Analyze a single work photo. Falls back to default analysis on failure."""
+        # Validate the image before sending
+        if not self._validate_image(image_path):
+            logger.warning(f"Image validation failed for {image_path}, using default analysis")
+            return self._default_analysis(trade)
+
+        try:
+            encoded = self._encode_image(image_path)
+        except Exception as e:
+            logger.error(f"Failed to encode image {image_path}: {e}")
+            return self._default_analysis(trade)
+
         prompt = self._build_prompt(trade)
 
         headers = {
@@ -49,7 +59,7 @@ class VisionAnalyzer:
             "messages": [
                 {
                     "role": "system",
-                    "content": "You are an expert contractor estimator. Analyze the provided work photo and extract structured data for quote generation. Be precise and conservative in estimates.",
+                    "content": "You are an expert contractor estimator with 20 years of field experience. Analyze the provided work photo and extract structured data for quote generation. Be precise, conservative, and realistic in your estimates. If you cannot determine something with confidence, note that uncertainty.",
                 },
                 {
                     "role": "user",
@@ -66,14 +76,49 @@ class VisionAnalyzer:
                 },
             ],
             "max_tokens": 800,
+            "temperature": 0.2,
         }
 
-        async with httpx.AsyncClient(timeout=60) as client:
-            resp = await client.post(self.base_url, headers=headers, json=payload)
-            resp.raise_for_status()
-            content = resp.json()["choices"][0]["message"]["content"]
+        try:
+            async with httpx.AsyncClient(timeout=90) as client:
+                resp = await client.post(self.base_url, headers=headers, json=payload)
+                resp.raise_for_status()
+                result = resp.json()
+                content = result["choices"][0]["message"]["content"]
+                analysis = self._parse_response(content, trade)
+                # Boost confidence since we got a real response
+                analysis.confidence = min(analysis.confidence + 0.1, 0.95)
+                return analysis
+        except httpx.HTTPStatusError as e:
+            logger.error(f"OpenAI API error (HTTP {e.response.status_code}): {e.response.text[:500]}")
+            if e.response.status_code == 401:
+                logger.error("Invalid or missing OpenAI API key")
+            elif e.response.status_code == 429:
+                logger.error("OpenAI rate limit hit")
+            return self._default_analysis(trade)
+        except httpx.RequestError as e:
+            logger.error(f"Network error calling OpenAI: {e}")
+            return self._default_analysis(trade)
+        except (KeyError, IndexError, json.JSONDecodeError) as e:
+            logger.error(f"Failed to parse OpenAI response: {e}")
+            return self._default_analysis(trade)
 
-        return self._parse_response(content, trade)
+    def _validate_image(self, image_path: str) -> bool:
+        """Check that the image file exists, is a valid image, and is under 20MB."""
+        path = Path(image_path)
+        if not path.exists():
+            logger.warning(f"Image not found: {image_path}")
+            return False
+        if path.stat().st_size > 20 * 1024 * 1024:
+            logger.warning(f"Image too large ({path.stat().st_size} bytes): {image_path}")
+            return False
+        try:
+            with Image.open(image_path) as img:
+                img.verify()
+            return True
+        except Exception as e:
+            logger.warning(f"Invalid image file {image_path}: {e}")
+            return False
 
     async def analyze_batch(self, image_paths: List[str], trade: str) -> ImageAnalysis:
         """Analyze multiple photos and merge results."""
@@ -218,7 +263,7 @@ Return as JSON: {"outlet_count": number, "amperage": 120|240|480, "wiring_type":
 
 
 class MockAnalyzer(VisionAnalyzer):
-    """Returns realistic mock data for testing."""
+    """Returns realistic mock data for local development and testing only."""
 
     async def analyze_image(self, image_path: str, trade: str) -> ImageAnalysis:
         mock_data = {
@@ -227,10 +272,10 @@ class MockAnalyzer(VisionAnalyzer):
                 estimated_sqft=2500,
                 complexity="medium",
                 damage_level=None,
-                materials_visible=["sod", "mulch"],
+                materials_visible=["sod", "mulch", "edging"],
                 access_difficulty="easy",
                 confidence=0.85,
-                notes="Front yard needs sod replacement and mulching",
+                notes="Front yard needs sod replacement and mulching. Good access from driveway.",
                 suggested_photos=["side_yard", "back_yard"],
             ),
             "roofing": ImageAnalysis(
@@ -238,10 +283,10 @@ class MockAnalyzer(VisionAnalyzer):
                 estimated_sqft=1800,
                 complexity="medium",
                 damage_level="moderate",
-                materials_visible=["asphalt_shingles"],
+                materials_visible=["asphalt_shingles", "underlayment", "flashing"],
                 access_difficulty="moderate",
                 confidence=0.80,
-                notes="Missing shingles on south side, some water damage visible",
+                notes="Missing shingles on south face, some water staining on sheathing. Two-story home.",
                 suggested_photos=["attic_interior", "gutter_closeup"],
             ),
             "plumbing": ImageAnalysis(
@@ -249,21 +294,51 @@ class MockAnalyzer(VisionAnalyzer):
                 estimated_sqft=None,
                 complexity="medium",
                 damage_level="moderate",
-                materials_visible=["copper_pipes"],
+                materials_visible=["copper_pipes", "pvc_drain", "shutoff_valve"],
                 access_difficulty="wall",
                 confidence=0.75,
-                notes="Leak under kitchen sink, copper pipes corroded",
+                notes="Leak under kitchen sink, copper supply lines corroded at joints. Cabinet access is tight.",
                 suggested_photos=["under_sink_wide", "basement_pipes"],
+            ),
+            "autobody": ImageAnalysis(
+                trade="autobody",
+                estimated_sqft=None,
+                complexity="medium",
+                damage_level="moderate",
+                materials_visible=["body_filler", "primer", "clearcoat"],
+                access_difficulty="easy",
+                confidence=0.78,
+                notes="Driver side rear quarter panel dented, paint scratched to primer. No frame damage visible.",
+                suggested_photos=["door_jamb", "trunk_interior"],
+            ),
+            "electrical": ImageAnalysis(
+                trade="electrical",
+                estimated_sqft=None,
+                complexity="low",
+                damage_level=None,
+                materials_visible=["romex_12_2", "outlet", "junction_box"],
+                access_difficulty="easy",
+                confidence=0.82,
+                notes="Standard outlet replacement, wiring looks modern (Romex, grounded). No panel upgrade needed.",
+                suggested_photos=["breaker_panel", "adjacent_outlets"],
             ),
         }
         return mock_data.get(trade, ImageAnalysis(
             trade=trade, estimated_sqft=500, complexity="medium",
             damage_level=None, materials_visible=[], access_difficulty="moderate",
-            confidence=0.5, notes="Mock analysis", suggested_photos=[],
+            confidence=0.5, notes="Mock analysis — no real AI available for this trade.",
+            suggested_photos=[],
         ))
 
 
 def get_analyzer(api_key: Optional[str] = None, mock: bool = False) -> VisionAnalyzer:
+    """Factory: returns the real analyzer when an API key is available, otherwise the mock.
+
+    The mock is only for local development. In production (Render), set OPENAI_API_KEY
+    and the real GPT-4o Vision analyzer is used automatically.
+    """
     if mock or not api_key:
+        logger.info("Using MockAnalyzer (no API key provided)")
         return MockAnalyzer()
+    logger.info(f"Using VisionAnalyzer with model {VisionAnalyzer.__init__.__defaults__}")
     return VisionAnalyzer(api_key)
