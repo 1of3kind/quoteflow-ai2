@@ -1,0 +1,83 @@
+services:
+  # Web service: FastAPI application
+  - type: web
+    name: quoteflow-api
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn api.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.0
+      - key: PYTHONPATH
+        value: /opt/render/project/src
+      - key: FEEDBACK_API_KEY
+        generateValue: true
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: TWILIO_ACCOUNT_SID
+        sync: false
+      - key: TWILIO_AUTH_TOKEN
+        sync: false
+      - key: TWILIO_PHONE_NUMBER
+        sync: false
+      - key: AGENT_PHONE_NUMBER
+        sync: false
+      - key: SENDGRID_API_KEY
+        sync: false
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: quoteflow-redis
+          property: connectionString
+      - key: STRIPE_SECRET_KEY
+        sync: false
+      - key: STRIPE_WEBHOOK_SECRET
+        sync: false
+      - key: BUSINESS_NAME
+        value: QuoteFlow AI
+
+  # Background worker: Celery for async image processing
+  - type: worker
+    name: quoteflow-worker
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: celery -A workers.celery_tasks.celery_app worker --loglevel=info
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.0
+      - key: PYTHONPATH
+        value: /opt/render/project/src
+      - key: FEEDBACK_API_KEY
+        fromService:
+          type: web
+          name: quoteflow-api
+          property: env.FEEDBACK_API_KEY
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: TWILIO_ACCOUNT_SID
+        sync: false
+      - key: TWILIO_AUTH_TOKEN
+        sync: false
+      - key: TWILIO_PHONE_NUMBER
+        sync: false
+      - key: AGENT_PHONE_NUMBER
+        sync: false
+      - key: SENDGRID_API_KEY
+        sync: false
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: quoteflow-redis
+          property: connectionString
+      - key: STRIPE_SECRET_KEY
+        sync: false
+      - key: STRIPE_WEBHOOK_SECRET
+        sync: false
+      - key: BUSINESS_NAME
+        value: QuoteFlow AI
+
+  # Redis for Celery task queue
+  - type: redis
+    name: quoteflow-redis
+    ipAllowList: []
+    plan: free
