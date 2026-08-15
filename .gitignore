@@ -1,0 +1,26 @@
+# Environment files (keep the committed template)
+.env
+.env.*
+!.env.example
+
+# Python artifacts
+__pycache__/
+*.py[cod]
+*.so
+
+# Test and type-check caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Build and coverage artifacts
+build/
+dist/
+*.egg-info/
+.coverage
+htmlcov/
