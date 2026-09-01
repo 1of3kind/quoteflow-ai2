@@ -187,6 +187,15 @@ class ConversationManager:
             )
             await session.commit()
 
+    async def set_trade(self, customer_id: str, trade: str):
+        async with AsyncSessionLocal() as session:
+            await session.execute(
+                update(ConversationModel)
+                .where(ConversationModel.id == customer_id)
+                .values(trade=trade, last_activity=datetime.utcnow())
+            )
+            await session.commit()
+
     async def add_message(self, customer_id: str, msg: Message):
         """Persist a message to the conversation."""
         async with AsyncSessionLocal() as session:
@@ -240,6 +249,11 @@ class ConversationManager:
             )
             models = result.scalars().all()
             return [Conversation.from_model(m) for m in models]
+
+    async def list_all(self) -> List[Conversation]:
+        async with AsyncSessionLocal() as session:
+            result = await session.execute(select(ConversationModel))
+            return [Conversation.from_model(model) for model in result.scalars().all()]
 
     async def get_active_count(self) -> int:
         async with AsyncSessionLocal() as session:

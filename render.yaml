@@ -1,10 +1,8 @@
-services:
-  # PostgreSQL for persistent storage (conversations, quotes, accounts)
-  - type: pserv
-    name: quoteflow-db
-    runtime: postgres
+databases:
+  - name: quoteflow-db
     plan: free
-    ipAllowList: []
+
+services:
 
   # Web service: FastAPI application
   - type: web
@@ -20,11 +18,16 @@ services:
       - key: FEEDBACK_API_KEY
         generateValue: true
       - key: DATABASE_URL
-        fromService:
-          type: pserv
+        fromDatabase:
           name: quoteflow-db
           property: connectionString
       - key: OPENAI_API_KEY
+        sync: false
+      - key: EMAIL_WEBHOOK_SECRET
+        sync: false
+      - key: PUBLIC_BASE_URL
+        sync: false
+      - key: CORS_ALLOW_ORIGINS
         sync: false
       - key: TWILIO_ACCOUNT_SID
         sync: false
@@ -38,7 +41,7 @@ services:
         sync: false
       - key: REDIS_URL
         fromService:
-          type: redis
+          type: keyvalue
           name: quoteflow-redis
           property: connectionString
       - key: STRIPE_SECRET_KEY
@@ -63,14 +66,16 @@ services:
         fromService:
           type: web
           name: quoteflow-api
-          property: env.FEEDBACK_API_KEY
+          envVarKey: FEEDBACK_API_KEY
       - key: DATABASE_URL
-        fromService:
-          type: pserv
+        fromDatabase:
           name: quoteflow-db
           property: connectionString
       - key: OPENAI_API_KEY
-        sync: false
+        fromService:
+          name: quoteflow-api
+          type: web
+          envVarKey: OPENAI_API_KEY
       - key: TWILIO_ACCOUNT_SID
         sync: false
       - key: TWILIO_AUTH_TOKEN
@@ -83,7 +88,7 @@ services:
         sync: false
       - key: REDIS_URL
         fromService:
-          type: redis
+          type: keyvalue
           name: quoteflow-redis
           property: connectionString
       - key: STRIPE_SECRET_KEY
@@ -94,7 +99,25 @@ services:
         value: QuoteFlow AI
 
   # Redis for Celery task queue
-  - type: redis
+  - type: keyvalue
     name: quoteflow-redis
     ipAllowList: []
     plan: free
+    maxmemoryPolicy: noeviction
+
+  - type: worker
+    name: quoteflow-scheduler
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: celery -A workers.celery_tasks.celery_app beat --loglevel=info
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.0
+      - key: PYTHONPATH
+        value: /opt/render/project/src
+      - key: REDIS_URL
+        fromService:
+          name: quoteflow-redis
+          type: keyvalue
+          property: connectionString

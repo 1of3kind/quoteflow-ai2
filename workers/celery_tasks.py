@@ -10,6 +10,7 @@ from celery import Celery
 from core.image_analyzer import get_analyzer
 from core.quote_calculator import QuoteCalculator
 from core.conversation_manager import ConversationManager, ConversationStage, get_response
+from core.security import is_allowed_twilio_media_url
 from services.notification_service import NotificationService
 from materials.order_manager import get_order_manager
 
@@ -29,6 +30,12 @@ celery_app.conf.update(
     enable_utc=True,
     task_track_started=True,
     task_time_limit=300,
+    beat_schedule={
+        "daily-follow-ups": {
+            "task": "workers.celery_tasks.daily_follow_ups",
+            "schedule": 3600.0,
+        },
+    },
 )
 
 conversation_mgr = ConversationManager()
@@ -45,11 +52,22 @@ def process_photos_and_quote(self, customer_id: str, photo_urls: List[str], trad
         local_paths = []
         for url in photo_urls:
             try:
-                resp = httpx.get(url, timeout=30)
-                resp.raise_for_status()
-                with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as f:
-                    f.write(resp.content)
-                    local_paths.append(f.name)
+                if not is_allowed_twilio_media_url(url):
+                    raise ValueError("Unsupported media URL host")
+                auth = (os.getenv("TWILIO_ACCOUNT_SID"), os.getenv("TWILIO_AUTH_TOKEN"))
+                with httpx.stream("GET", url, auth=auth, timeout=30, follow_redirects=False) as resp:
+                    resp.raise_for_status()
+                    content_length = int(resp.headers.get("content-length", "0"))
+                    if content_length > 20 * 1024 * 1024:
+                        raise ValueError("Image exceeds 20 MB limit")
+                    total = 0
+                    with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as f:
+                        for chunk in resp.iter_bytes():
+                            total += len(chunk)
+                            if total > 20 * 1024 * 1024:
+                                raise ValueError("Image exceeds 20 MB limit")
+                            f.write(chunk)
+                        local_paths.append(f.name)
             except Exception as e:
                 logger.warning(f"Failed to download {url}: {e}")
 
@@ -63,10 +81,10 @@ def process_photos_and_quote(self, customer_id: str, photo_urls: List[str], trad
         calculator = QuoteCalculator()
         quote = calculator.calculate(trade, customer_id, analysis)
 
-        conv = conversation_mgr.get(customer_id)
+        conv = asyncio.run(conversation_mgr.get(customer_id))
         if conv:
-            conv.quote_id = quote.quote_id
-            conversation_mgr.update_stage(customer_id, ConversationStage.QUOTE_READY)
+            asyncio.run(conversation_mgr.set_quote_id(customer_id, quote.quote_id))
+            asyncio.run(conversation_mgr.update_stage(customer_id, ConversationStage.QUOTE_READY))
 
         notifier = NotificationService()
         quote_text = calculator.format_quote_text(quote)
@@ -121,7 +139,8 @@ def process_photos_and_quote(self, customer_id: str, photo_urls: List[str], trad
 @celery_app.task
 def send_follow_up(customer_id: str, quote_id: str):
     """Send follow-up for pending quotes."""
-    conv = conversation_mgr.get(customer_id)
+    import asyncio
+    conv = asyncio.run(conversation_mgr.get(customer_id))
     if not conv or conv.stage == ConversationStage.BOOKED:
         return {"status": "skipped", "reason": "already booked or no conversation"}
 
@@ -139,7 +158,8 @@ def send_follow_up(customer_id: str, quote_id: str):
 @celery_app.task
 def daily_follow_ups():
     """Check for stale quotes and send follow-ups."""
-    stale = conversation_mgr.get_stale_conversations(hours=48)
+    import asyncio
+    stale = asyncio.run(conversation_mgr.get_stale_conversations(hours=48))
     for conv in stale:
         if conv.quote_id and conv.stage == ConversationStage.QUOTE_SENT:
             send_follow_up.delay(conv.customer_id, conv.quote_id)

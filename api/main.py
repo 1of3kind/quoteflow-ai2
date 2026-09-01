@@ -12,6 +12,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from core.conversation_manager import ConversationManager, ConversationStage, get_response
+from core.database import init_db
+from core.security import api_key_is_valid, required_secret, verify_email_webhook, verify_twilio_request
 from core.image_analyzer import get_analyzer
 from core.quote_calculator import QuoteCalculator
 from services.sms_handler import SMSHandler
@@ -31,11 +33,10 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("api")
 
 security = HTTPBearer()
-API_KEY = os.getenv("FEEDBACK_API_KEY", "replace-me")
 
 
 def verify_token(credentials: HTTPAuthorizationCredentials = Depends(security)):
-    if credentials.credentials != API_KEY:
+    if not api_key_is_valid(credentials.credentials):
         raise HTTPException(status_code=401, detail="Invalid API key")
     return credentials.credentials
 
@@ -105,6 +106,10 @@ class PlanUpgrade(BaseModel):
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("QuoteFlow AI starting...")
+    # Fail closed at startup rather than exposing a predictable fallback key.
+    required_secret("FEEDBACK_API_KEY")
+    required_secret("OPENAI_API_KEY")
+    await init_db()
     app.state.conversations = ConversationManager()
     app.state.sms = SMSHandler()
     app.state.email = EmailProcessor()
@@ -124,7 +129,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[origin.strip() for origin in os.getenv("CORS_ALLOW_ORIGINS", "").split(",") if origin.strip()],
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -170,7 +175,7 @@ async def health():
     return {
         "status": "healthy",
         "timestamp": datetime.utcnow().isoformat(),
-        "active_conversations": app.state.conversations.get_active_count(),
+        "active_conversations": await app.state.conversations.get_active_count(),
     }
 
 
@@ -178,21 +183,23 @@ async def health():
 async def webhook_sms(request: Request):
     """Handle incoming SMS with photos from customers."""
     form = await request.form()
-    data = app.state.sms.parse_inbound(dict(form))
+    form_data = {key: str(value) for key, value in form.items()}
+    await verify_twilio_request(request, form_data)
+    data = app.state.sms.parse_inbound(form_data)
 
     customer_id = f"sms_{data['from']}"
     body = data["body"].lower().strip()
     media_urls = [url for url in data["media_urls"] if url]
 
-    conv = app.state.conversations.get_or_create(
+    conv = await app.state.conversations.get_or_create(
         customer_id=customer_id,
         phone=data["from"],
     )
 
     trades = ["landscaping", "roofing", "plumbing", "autobody", "electrical"]
     if body in trades and conv.stage == ConversationStage.GREETING:
-        conv.trade = body
-        app.state.conversations.update_stage(customer_id, ConversationStage.TRADE_SELECT)
+        await app.state.conversations.set_trade(customer_id, body)
+        await app.state.conversations.update_stage(customer_id, ConversationStage.TRADE_SELECT)
 
         from config.pricing_configs import get_trade_config
         config = get_trade_config(body)
@@ -202,15 +209,15 @@ async def webhook_sms(request: Request):
         return app.state.sms.create_response(response_text)
 
     if media_urls and conv.trade:
-        conv.add_photos(media_urls)
-        app.state.conversations.update_stage(customer_id, ConversationStage.PHOTO_RECEIVED)
+        await app.state.conversations.add_photos(customer_id, media_urls)
+        await app.state.conversations.update_stage(customer_id, ConversationStage.PHOTO_RECEIVED)
         process_photos_and_quote.delay(customer_id, media_urls, conv.trade)
 
         response_text = get_response("analyzing")
         return app.state.sms.create_response(response_text)
 
     if body in ("accept", "yes", "book", "schedule") and conv.quote_id:
-        app.state.conversations.update_stage(customer_id, ConversationStage.BOOKED)
+        await app.state.conversations.update_stage(customer_id, ConversationStage.BOOKED)
         response_text = get_response("booked", quote_id=conv.quote_id, total="TBD")
         return app.state.sms.create_response(response_text)
 
@@ -225,11 +232,12 @@ async def webhook_sms(request: Request):
 @app.post("/webhook/email")
 async def webhook_email(request: Request):
     """Handle incoming emails with photo attachments."""
+    await verify_email_webhook(request)
     payload = await request.json()
     email = app.state.email.parse_inbound(payload)
 
     customer_id = f"email_{email.from_email}"
-    conv = app.state.conversations.get_or_create(
+    conv = await app.state.conversations.get_or_create(
         customer_id=customer_id,
         email=email.from_email,
     )
@@ -239,12 +247,12 @@ async def webhook_email(request: Request):
     detected_trade = next((t for t in trades if t in body_lower), None)
 
     if detected_trade and not conv.trade:
-        conv.trade = detected_trade
-        app.state.conversations.update_stage(customer_id, ConversationStage.TRADE_SELECT)
+        await app.state.conversations.set_trade(customer_id, detected_trade)
+        await app.state.conversations.update_stage(customer_id, ConversationStage.TRADE_SELECT)
 
     photo_urls = [att["url"] for att in email.attachments if "image" in att.get("content_type", "")]
     if photo_urls and conv.trade:
-        conv.add_photos(photo_urls)
+        await app.state.conversations.add_photos(customer_id, photo_urls)
         process_photos_and_quote.delay(customer_id, photo_urls, conv.trade)
 
         await app.state.email.send_quote_email(
@@ -258,14 +266,18 @@ async def webhook_email(request: Request):
 
 
 @app.post("/voice/welcome")
-async def voice_welcome():
+async def voice_welcome(request: Request):
     """Twilio voice webhook: initial greeting."""
+    form = await request.form()
+    await verify_twilio_request(request, {key: str(value) for key, value in form.items()})
     return app.state.voice.create_welcome_response()
 
 
 @app.post("/voice/trade-select")
-async def voice_trade_select(Digits: str = Form(...)):
+async def voice_trade_select(request: Request, Digits: str = Form(...)):
     """Handle trade selection from phone keypad."""
+    form = await request.form()
+    await verify_twilio_request(request, {key: str(value) for key, value in form.items()})
     trades = {
         "1": "landscaping",
         "2": "roofing",
@@ -280,13 +292,13 @@ async def voice_trade_select(Digits: str = Form(...)):
 @app.post("/quote/start", dependencies=[Depends(verify_token)])
 async def start_quote(data: TradeSelect):
     """Manually start a quote (for web dashboard)."""
-    conv = app.state.conversations.get_or_create(
+    conv = await app.state.conversations.get_or_create(
         customer_id=data.customer_id,
         phone=data.phone,
         email=data.email,
     )
-    conv.trade = data.trade
-    app.state.conversations.update_stage(data.customer_id, ConversationStage.TRADE_SELECT)
+    await app.state.conversations.set_trade(data.customer_id, data.trade)
+    await app.state.conversations.update_stage(data.customer_id, ConversationStage.TRADE_SELECT)
 
     from config.pricing_configs import get_trade_config
     config = get_trade_config(data.trade)
@@ -302,11 +314,11 @@ async def start_quote(data: TradeSelect):
 @app.post("/quote/accept", dependencies=[Depends(verify_token)])
 async def accept_quote(data: QuoteAccept):
     """Customer accepts a quote."""
-    conv = app.state.conversations.get(data.customer_id)
+    conv = await app.state.conversations.get(data.customer_id)
     if not conv or conv.quote_id != data.quote_id:
         raise HTTPException(status_code=404, detail="Quote not found")
 
-    app.state.conversations.update_stage(data.customer_id, ConversationStage.BOOKED)
+    await app.state.conversations.update_stage(data.customer_id, ConversationStage.BOOKED)
     return {
         "status": "booked",
         "quote_id": data.quote_id,
@@ -318,7 +330,7 @@ async def accept_quote(data: QuoteAccept):
 @app.get("/admin/conversations", dependencies=[Depends(verify_token)])
 async def list_conversations(stage: Optional[str] = None):
     """List all conversations with optional filter."""
-    convs = app.state.conversations.conversations.values()
+    convs = await app.state.conversations.list_all()
     if stage:
         convs = [c for c in convs if c.stage.value == stage]
     return {
@@ -330,17 +342,12 @@ async def list_conversations(stage: Optional[str] = None):
 @app.get("/admin/analytics", dependencies=[Depends(verify_token)])
 async def analytics():
     """Get business analytics."""
+    convs = await app.state.conversations.list_all()
     return {
-        "total_conversations": len(app.state.conversations.conversations),
-        "active": app.state.conversations.get_active_count(),
-        "conversion_rate": round(app.state.conversations.get_conversion_rate(), 2),
-        "by_stage": {
-            stage.value: len([
-                c for c in app.state.conversations.conversations.values()
-                if c.stage == stage
-            ])
-            for stage in ConversationStage
-        },
+        "total_conversations": len(convs),
+        "active": await app.state.conversations.get_active_count(),
+        "conversion_rate": round(await app.state.conversations.get_conversion_rate(), 2),
+        "by_stage": {stage.value: sum(c.stage == stage for c in convs) for stage in ConversationStage},
     }
 
 
@@ -526,6 +533,8 @@ async def search_stores(query: str, zip_code: str, trade: str = ""):
 @app.post("/payments/create", dependencies=[Depends(verify_token)])
 async def create_payment(data: PaymentRequest):
     """Create a payment intent for quote acceptance."""
+    if os.getenv("PAYMENTS_ENABLED", "false").lower() != "true":
+        raise HTTPException(status_code=503, detail="Payments are disabled until server-side quote pricing is enabled")
     stripe = get_stripe_client()
 
     if data.payment_type == "deposit":
@@ -555,6 +564,8 @@ async def create_payment(data: PaymentRequest):
 @app.post("/payments/checkout", dependencies=[Depends(verify_token)])
 async def create_checkout(data: CheckoutRequest):
     """Create a Stripe Checkout session for customer payment."""
+    if os.getenv("PAYMENTS_ENABLED", "false").lower() != "true":
+        raise HTTPException(status_code=503, detail="Payments are disabled until server-side quote pricing is enabled")
     stripe = get_stripe_client()
 
     session = await stripe.create_checkout_session(
@@ -574,6 +585,8 @@ async def create_checkout(data: CheckoutRequest):
 @app.post("/payments/refund", dependencies=[Depends(verify_token)])
 async def refund_payment(payment_intent_id: str, amount: Optional[float] = None):
     """Refund a payment (partial or full)."""
+    if os.getenv("PAYMENTS_ENABLED", "false").lower() != "true":
+        raise HTTPException(status_code=503, detail="Payments are disabled until server-side quote pricing is enabled")
     stripe = get_stripe_client()
     result = await stripe.refund_payment(payment_intent_id, amount)
     return result
@@ -615,7 +628,7 @@ async def list_plans():
     }
 
 
-@app.post("/contractors/signup")
+@app.post("/contractors/signup", dependencies=[Depends(verify_token)])
 async def signup_contractor(data: ContractorSignup):
     """Create a new contractor account."""
     billing = get_billing_manager()
@@ -646,7 +659,7 @@ async def upgrade_contractor(data: PlanUpgrade):
     return result
 
 
-@app.get("/contractors/{contractor_id}/status")
+@app.get("/contractors/{contractor_id}/status", dependencies=[Depends(verify_token)])
 async def contractor_status(contractor_id: str):
     """Get contractor account status and usage."""
     billing = get_billing_manager()
@@ -654,7 +667,7 @@ async def contractor_status(contractor_id: str):
 
 
 # Include dashboard router
-app.include_router(dashboard_router)
+app.include_router(dashboard_router, dependencies=[Depends(verify_token)])
 
 
 if __name__ == "__main__":
