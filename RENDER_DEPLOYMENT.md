@@ -1,0 +1,155 @@
+# Render Deployment Guide for QuoteFlow AI
+
+This guide walks you through deploying QuoteFlow AI on [Render](https://render.com) using the included **Render Blueprint** (`render.yaml`).
+
+---
+
+## 🏗 Architecture on Render
+
+When deployed via `render.yaml`, Render provisions the following 5 components:
+
+```
+                            ┌────────────────────────────────────────┐
+                            │               Customers                │
+                            │   (SMS / MMS / Voice / Email / Web)    │
+                            └───────────────────┬────────────────────┘
+                                                │
+                                                ▼
+┌────────────────────────────────────────────────────────────────────────────────────────────┐
+│  Render Managed Cloud Environment                                                         │
+│                                                                                            │
+│   ┌────────────────────────────────┐                 ┌──────────────────────────────────┐  │
+│   │   Web Service: quoteflow-api   │                 │   Key-Value: quoteflow-redis     │  │
+│   │   - FastAPI backend (Python)   │◄───────────────►│   - Celery Task Queue Broker     │  │
+│   │   - Twilio & SendGrid webhooks │                 │   - Result backend               │  │
+│   │   - Retool dashboard endpoints │                 └─────────────────┬────────────────┘  │
+│   └───────────────┬────────────────┘                                   │                   │
+│                   │                                                    ▼                   │
+│                   │                                  ┌──────────────────────────────────┐  │
+│                   │                                  │  Worker: quoteflow-worker        │  │
+│                   │                                  │  - Async image analysis (Vision) │  │
+│                   │                                  │  - Quote & materials generation  │  │
+│                   │                                  │  - SMS / Email notifications     │  │
+│                   │                                  └──────────────────────────────────┘  │
+│                   ▼                                                    │                   │
+│   ┌────────────────────────────────┐                                   │                   │
+│   │  PostgreSQL: quoteflow-db      │◄──────────────────────────────────┘                   │
+│   │  - Conversations & history     │                                                       │
+│   │  - Quotes & line items         │                 ┌──────────────────────────────────┐  │
+│   │  - Appointments & orders       │                 │  Worker: quoteflow-scheduler     │  │
+│   │  - Contractor billing accounts │◄────────────────│  - Celery Beat follow-up cron    │  │
+│   └────────────────────────────────┘                 └──────────────────────────────────┘  │
+└────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 🚀 1-Click / Blueprint Deployment Steps
+
+### Step 1: Push Code to GitHub / GitLab
+Ensure your latest repository code is committed and pushed to your GitHub or GitLab account.
+
+### Step 2: Create a New Blueprint Instance in Render
+1. Log in to your [Render Dashboard](https://dashboard.render.com).
+2. Click **New +** in the top navigation bar and select **Blueprint**.
+3. Connect your GitHub/GitLab repository (`quoteflow-ai` or your fork).
+4. Select the branch to deploy (e.g. `main` or `master`).
+5. Render will automatically detect the [`render.yaml`](./render.yaml) file.
+
+### Step 3: Configure Environment Variables
+Render will prompt you to provide values for non-synchronized secrets:
+
+| Variable | Required? | Description | Example / Notes |
+|---|---|---|---|
+| `OPENAI_API_KEY` | **Yes** | OpenAI API Key for GPT-4 Vision image analysis | `sk-proj-...` |
+| `TWILIO_ACCOUNT_SID` | Optional | Twilio Account SID for SMS & Voice | `ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx` |
+| `TWILIO_AUTH_TOKEN` | Optional | Twilio Auth Token for signature validation | `xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx` |
+| `TWILIO_PHONE_NUMBER` | Optional | Twilio provisioned phone number | `+1234567890` |
+| `AGENT_PHONE_NUMBER` | Optional | Contractor/agent phone for forwarding | `+1987654321` |
+| `SENDGRID_API_KEY` | Optional | SendGrid API Key for inbound/outbound email | `SG.xxxxxxxx` |
+| `PUBLIC_BASE_URL` | Optional | Your Render API domain for webhook validation | `https://quoteflow-api.onrender.com` |
+| `STRIPE_SECRET_KEY` | Optional | Stripe API Secret Key (if payments enabled) | `sk_live_...` or `sk_test_...` |
+| `STRIPE_WEBHOOK_SECRET` | Optional | Stripe Webhook signing secret | `whsec_...` |
+| `PAYMENTS_ENABLED` | Optional | Enable/disable Stripe payments | Default `false` |
+| `FEEDBACK_API_KEY` | **Auto** | API security key for dashboard & admin | *Automatically generated by Render* |
+| `EMAIL_WEBHOOK_SECRET`| **Auto** | Secret header for email webhook | *Automatically generated by Render* |
+| `DATABASE_URL` | **Auto** | Internal Postgres connection string | *Linked from `quoteflow-db`* |
+| `REDIS_URL` | **Auto** | Internal Redis connection string | *Linked from `quoteflow-redis`* |
+
+### Step 4: Click "Apply"
+Render will automatically provision the PostgreSQL database, Key-Value Redis, FastAPI web service, Celery worker, and Celery beat scheduler.
+
+---
+
+## 🔗 Webhook Configuration (Twilio, SendGrid, Stripe)
+
+Once your web service is deployed (e.g., at `https://quoteflow-api.onrender.com`), configure your external webhooks:
+
+### 1. Twilio SMS Webhook
+1. Go to **Twilio Console** → **Phone Numbers** → **Manage** → **Active Numbers**.
+2. Click your phone number.
+3. Under **Messaging Configuration**:
+   - **A MESSAGE COMES IN**: `Webhook`
+   - **URL**: `https://<YOUR-RENDER-SUBDOMAIN>.onrender.com/webhook/sms`
+   - **HTTP METHOD**: `HTTP POST`
+4. Set `PUBLIC_BASE_URL` environment variable on Render to `https://<YOUR-RENDER-SUBDOMAIN>.onrender.com`.
+
+### 2. Twilio Voice Webhook
+Under the same Twilio phone number configuration:
+- **A CALL COMES IN**: `Webhook`
+- **URL**: `https://<YOUR-RENDER-SUBDOMAIN>.onrender.com/voice/welcome`
+- **HTTP METHOD**: `HTTP POST`
+
+### 3. SendGrid Inbound Parse
+1. Go to **SendGrid Settings** → **Inbound Parse**.
+2. Add your hostname (e.g. `quotes.yourdomain.com`).
+3. Set **Destination URL**: `https://<YOUR-RENDER-SUBDOMAIN>.onrender.com/webhook/email`.
+4. Add the custom header `X-QuoteFlow-Webhook-Secret` matching your generated `EMAIL_WEBHOOK_SECRET`.
+
+### 4. Stripe Webhooks (Optional)
+1. Go to **Stripe Dashboard** → **Developers** → **Webhooks**.
+2. Add endpoint: `https://<YOUR-RENDER-SUBDOMAIN>.onrender.com/webhook/stripe`.
+3. Select events: `payment_intent.succeeded`, `payment_intent.payment_failed`, `checkout.session.completed`, `customer.subscription.updated`.
+4. Copy the signing secret into `STRIPE_WEBHOOK_SECRET`.
+
+---
+
+## 💡 Cost Optimization: Single-Worker Mode
+
+Render's background workers operate on paid compute tiers (`plan: starter` at ~$7/mo). If you wish to combine the Celery worker and the Celery Beat scheduler into a single worker instance:
+
+1. In `render.yaml`, delete the `quoteflow-scheduler` block.
+2. In `quoteflow-worker`, change the `startCommand` to:
+   ```bash
+   celery -A workers.celery_tasks.celery_app worker --beat --loglevel=info
+   ```
+3. Commit and redeploy on Render.
+
+---
+
+## 🔍 Verification & Health Checks
+
+### Check Web Service Health
+```bash
+curl -i https://<YOUR-RENDER-SUBDOMAIN>.onrender.com/health
+```
+Expected response:
+```json
+{
+  "status": "healthy",
+  "timestamp": "2026-09-01T20:25:00.000000",
+  "active_conversations": 0
+}
+```
+
+### Check Celery Worker Logs
+In your Render Dashboard:
+1. Navigate to `quoteflow-worker`.
+2. Click **Logs**.
+3. Verify Celery has connected to Redis and registered the tasks:
+   - `workers.celery_tasks.process_photos_and_quote`
+   - `workers.celery_tasks.send_follow_up`
+   - `workers.celery_tasks.daily_follow_ups`
+
+### Verify Database Connection
+The FastAPI app automatically initializes tables on startup via `init_db()` in `core/database.py`. You can inspect the Postgres tables directly using Render's built-in **psql** Web Shell in the `quoteflow-db` dashboard.

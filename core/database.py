@@ -10,13 +10,14 @@ import os
 import logging
 from datetime import datetime, timedelta
 from typing import Optional, List, Dict, AsyncGenerator
+from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
 
 from sqlalchemy import (
     Column, String, Integer, Float, Boolean, DateTime, Text,
     ForeignKey, JSON, Enum as SAEnum, select, update, delete, and_, or_,
 )
 from sqlalchemy.ext.asyncio import (
-    create_async_engine, AsyncSession, async_sessionmaker,
+    create_async_engine, AsyncSession, async_sessionmaker, AsyncEngine,
 )
 from sqlalchemy.orm import declarative_base, relationship
 from sqlalchemy.dialects.postgresql import UUID
@@ -25,23 +26,56 @@ import uuid
 logger = logging.getLogger("database")
 
 # ---------------------------------------------------------------------------
-# Engine & session
+# Engine & session helpers
 # ---------------------------------------------------------------------------
 
-DATABASE_URL = os.getenv(
-    "DATABASE_URL",
-    "postgresql+asyncpg://postgres:postgres@localhost:5432/quoteflow",
-)
-# Render supplies a sync-style URL; asyncpg needs the +asyncpg driver prefix
-if DATABASE_URL.startswith("postgres://"):
-    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+asyncpg://", 1)
-elif DATABASE_URL.startswith("postgresql://"):
-    DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
+def normalize_database_url(raw_url: Optional[str] = None) -> str:
+    """Normalize database connection URL for async SQLAlchemy.
+    
+    Translates Render's PostgreSQL connection strings (postgres://, postgresql://)
+    to postgresql+asyncpg:// and maps unsupported driver query parameters like
+    sslmode to ssl.
+    """
+    url = (raw_url or os.getenv("DATABASE_URL", "postgresql+asyncpg://postgres:postgres@localhost:5432/quoteflow")).strip()
+    
+    if url.startswith("postgres://"):
+        url = url.replace("postgres://", "postgresql+asyncpg://", 1)
+    elif url.startswith("postgresql://") and not url.startswith("postgresql+"):
+        url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
 
-engine = create_async_engine(DATABASE_URL, echo=False, pool_size=10, max_overflow=20)
+    parsed = urlparse(url)
+    if parsed.query:
+        query_params = parse_qs(parsed.query)
+        if "sslmode" in query_params:
+            ssl_val = query_params.pop("sslmode")[0]
+            query_params["ssl"] = [ssl_val]
+        new_query = urlencode(query_params, doseq=True)
+        url = urlunparse(parsed._replace(query=new_query))
+
+    return url
+
+
+DATABASE_URL = normalize_database_url()
+
+def get_engine_args(url: str) -> dict:
+    """Return dialect-appropriate engine arguments."""
+    if "sqlite" in url:
+        return {"echo": False}
+    return {"echo": False, "pool_size": 10, "max_overflow": 20}
+
+engine: AsyncEngine = create_async_engine(DATABASE_URL, **get_engine_args(DATABASE_URL))
 AsyncSessionLocal = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 Base = declarative_base()
+
+
+def set_database_url(new_url: str):
+    """Dynamically update the active engine and sessionmaker (used for testing/in-memory SQLite)."""
+    global DATABASE_URL, engine, AsyncSessionLocal
+    DATABASE_URL = normalize_database_url(new_url)
+    engine = create_async_engine(DATABASE_URL, **get_engine_args(DATABASE_URL))
+    AsyncSessionLocal = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    return engine
 
 
 async def get_session() -> AsyncGenerator[AsyncSession, None]:

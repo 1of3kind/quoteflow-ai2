@@ -26,6 +26,7 @@ class AppointmentWithMaterials:
     materials_order: Optional[MaterialOrder]
     pickup_reminder_sent: bool = False
     materials_confirmed: bool = False
+    status: str = "scheduled"
     notes: str = ""
 
 

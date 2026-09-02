@@ -1,12 +1,22 @@
 """Tests for QuoteFlow AI."""
 
 import pytest
-from datetime import datetime
+import pytest_asyncio
+from datetime import datetime, timedelta
 
 from config.pricing_configs import get_trade_config, list_trades
 from core.image_analyzer import MockAnalyzer
 from core.quote_calculator import QuoteCalculator
 from core.conversation_manager import ConversationManager, ConversationStage, get_response
+from core.database import init_db, set_database_url, normalize_database_url
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def setup_test_db():
+    """Set up an in-memory SQLite database for test isolation."""
+    set_database_url("sqlite+aiosqlite:///:memory:")
+    await init_db()
+    yield
 
 
 class TestPricingConfigs:
@@ -71,25 +81,29 @@ class TestQuoteCalculator:
 
 
 class TestConversationManager:
-    def test_create_conversation(self):
+    @pytest.mark.asyncio
+    async def test_create_conversation(self):
         mgr = ConversationManager()
-        conv = mgr.get_or_create("cust_001", phone="+1234567890")
+        conv = await mgr.get_or_create("cust_001", phone="+1234567890")
         assert conv.stage == ConversationStage.GREETING
         assert conv.customer_phone == "+1234567890"
 
-    def test_stage_transitions(self):
+    @pytest.mark.asyncio
+    async def test_stage_transitions(self):
         mgr = ConversationManager()
-        mgr.get_or_create("cust_001")
-        mgr.update_stage("cust_001", ConversationStage.TRADE_SELECT)
-        conv = mgr.get("cust_001")
+        await mgr.get_or_create("cust_001")
+        await mgr.update_stage("cust_001", ConversationStage.TRADE_SELECT)
+        conv = await mgr.get("cust_001")
         assert conv.stage == ConversationStage.TRADE_SELECT
 
-    def test_conversion_rate(self):
+    @pytest.mark.asyncio
+    async def test_conversion_rate(self):
         mgr = ConversationManager()
-        mgr.get_or_create("c1")
-        mgr.get_or_create("c2")
-        mgr.update_stage("c1", ConversationStage.BOOKED)
-        assert mgr.get_conversion_rate() == 50.0
+        await mgr.get_or_create("c1")
+        await mgr.get_or_create("c2")
+        await mgr.update_stage("c1", ConversationStage.BOOKED)
+        rate = await mgr.get_conversion_rate()
+        assert rate == 50.0
 
 
 class TestResponseTemplates:
@@ -102,6 +116,18 @@ class TestResponseTemplates:
         assert "analyzing" in resp
 
 
+class TestDatabaseURLNormalization:
+    def test_render_postgres_url_conversion(self):
+        render_url = "postgres://user:pass@dpg-abc1234:5432/quoteflow_db"
+        normalized = normalize_database_url(render_url)
+        assert normalized.startswith("postgresql+asyncpg://")
+
+    def test_render_sslmode_conversion(self):
+        render_url = "postgresql://user:pass@dpg-abc1234.render.com:5432/quoteflow_db?sslmode=require"
+        normalized = normalize_database_url(render_url)
+        assert "postgresql+asyncpg://" in normalized
+        assert "ssl=require" in normalized
+        assert "sslmode" not in normalized
 
 
 class TestMaterialsOrdering:
@@ -141,7 +167,7 @@ class TestMaterialsOrdering:
         manager = get_order_manager()
 
         # Create a fake materials order first
-        from materials.store_inventory import MaterialOrder, StoreItem
+        from materials.store_inventory import MaterialOrder
         order = MaterialOrder(
             order_id="ORD-TEST-001",
             quote_id="Q-TEST-001",
@@ -170,12 +196,45 @@ class TestMaterialsOrdering:
         assert apt.appointment_id.startswith("APT-")
         assert apt.materials_order is not None
         assert apt.materials_order.store_name == "Home Depot"
+        assert apt.status == "scheduled"
 
     def test_pickup_reminder(self):
         from materials.order_manager import get_order_manager
+        from materials.store_inventory import MaterialOrder, StoreItem
         from datetime import datetime
 
         manager = get_order_manager()
+        order = MaterialOrder(
+            order_id="ORD-TEST-002",
+            quote_id="Q-TEST-002",
+            trade="roofing",
+            items=[
+                StoreItem(
+                    sku="SHING-01",
+                    name="Architectural Shingles",
+                    brand="GAF",
+                    price=35.0,
+                    in_stock=True,
+                    quantity_available=50,
+                    store_id="store_lowes_1",
+                    store_name="Lowe's",
+                    store_address="456 Oak Ave",
+                    distance_miles=2.5,
+                    aisle_location="Aisle 14",
+                    pickup_ready=True,
+                )
+            ],
+            subtotal=35.0,
+            tax=2.8,
+            total=37.8,
+            store_name="Lowe's",
+            store_address="456 Oak Ave",
+            pickup_time="2026-07-20T07:00:00",
+            status="confirmed",
+        )
+        manager.orders[order.order_id] = order
+        manager.quote_to_order["Q-TEST-002"] = order.order_id
+
         apt = manager.schedule_appointment_with_pickup(
             customer_id="cust_002",
             customer_name="Jane Doe",
@@ -187,6 +246,8 @@ class TestMaterialsOrdering:
 
         reminder = manager.get_pickup_reminder(apt)
         assert "MATERIALS PICKUP REMINDER" in reminder
+        assert "Lowe's" in reminder
+        assert "Architectural Shingles" in reminder
 
 
 if __name__ == "__main__":

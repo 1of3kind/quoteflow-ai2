@@ -378,8 +378,7 @@ async def create_materials_order(data: MaterialsOrderRequest):
     analyzer = MockAnalyzer()
     calc = QuoteCalculator()
 
-    import asyncio
-    analysis = asyncio.run(analyzer.analyze_image("fake.jpg", data.trade))
+    analysis = await analyzer.analyze_image("fake.jpg", data.trade)
     quote = calc.calculate(data.trade, "cust_001", analysis)
     quote.quote_id = data.quote_id
 

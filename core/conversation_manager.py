@@ -12,9 +12,9 @@ from enum import Enum
 from sqlalchemy import select, update, delete, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from core import database
 from core.database import (
     ConversationModel, MessageModel, PhotoModel,
-    AsyncSessionLocal,
 )
 
 logger = logging.getLogger("conversation_manager")
@@ -135,7 +135,7 @@ class ConversationManager:
         phone: Optional[str] = None,
         email: Optional[str] = None,
     ) -> Conversation:
-        async with AsyncSessionLocal() as session:
+        async with database.AsyncSessionLocal() as session:
             result = await session.execute(
                 select(ConversationModel).where(ConversationModel.id == customer_id)
             )
@@ -171,7 +171,7 @@ class ConversationManager:
             return Conversation.from_model(model)
 
     async def get(self, customer_id: str) -> Optional[Conversation]:
-        async with AsyncSessionLocal() as session:
+        async with database.AsyncSessionLocal() as session:
             result = await session.execute(
                 select(ConversationModel).where(ConversationModel.id == customer_id)
             )
@@ -179,7 +179,7 @@ class ConversationManager:
             return Conversation.from_model(model) if model else None
 
     async def update_stage(self, customer_id: str, stage: ConversationStage):
-        async with AsyncSessionLocal() as session:
+        async with database.AsyncSessionLocal() as session:
             await session.execute(
                 update(ConversationModel)
                 .where(ConversationModel.id == customer_id)
@@ -188,7 +188,7 @@ class ConversationManager:
             await session.commit()
 
     async def set_trade(self, customer_id: str, trade: str):
-        async with AsyncSessionLocal() as session:
+        async with database.AsyncSessionLocal() as session:
             await session.execute(
                 update(ConversationModel)
                 .where(ConversationModel.id == customer_id)
@@ -198,7 +198,7 @@ class ConversationManager:
 
     async def add_message(self, customer_id: str, msg: Message):
         """Persist a message to the conversation."""
-        async with AsyncSessionLocal() as session:
+        async with database.AsyncSessionLocal() as session:
             model = MessageModel(
                 conversation_id=customer_id,
                 channel=msg.channel.value,
@@ -216,7 +216,7 @@ class ConversationManager:
 
     async def add_photos(self, customer_id: str, urls: List[str]):
         """Persist photo URLs to the conversation."""
-        async with AsyncSessionLocal() as session:
+        async with database.AsyncSessionLocal() as session:
             for url in urls:
                 photo = PhotoModel(conversation_id=customer_id, url=url)
                 session.add(photo)
@@ -228,7 +228,7 @@ class ConversationManager:
             await session.commit()
 
     async def set_quote_id(self, customer_id: str, quote_id: str):
-        async with AsyncSessionLocal() as session:
+        async with database.AsyncSessionLocal() as session:
             await session.execute(
                 update(ConversationModel)
                 .where(ConversationModel.id == customer_id)
@@ -238,7 +238,7 @@ class ConversationManager:
 
     async def get_stale_conversations(self, hours: int = 24) -> List[Conversation]:
         cutoff = datetime.utcnow() - timedelta(hours=hours)
-        async with AsyncSessionLocal() as session:
+        async with database.AsyncSessionLocal() as session:
             result = await session.execute(
                 select(ConversationModel).where(
                     and_(
@@ -251,12 +251,12 @@ class ConversationManager:
             return [Conversation.from_model(m) for m in models]
 
     async def list_all(self) -> List[Conversation]:
-        async with AsyncSessionLocal() as session:
+        async with database.AsyncSessionLocal() as session:
             result = await session.execute(select(ConversationModel))
             return [Conversation.from_model(model) for model in result.scalars().all()]
 
     async def get_active_count(self) -> int:
-        async with AsyncSessionLocal() as session:
+        async with database.AsyncSessionLocal() as session:
             result = await session.execute(
                 select(ConversationModel).where(
                     ConversationModel.stage.notin_(["booked", "closed"])
@@ -265,7 +265,7 @@ class ConversationManager:
             return len(result.scalars().all())
 
     async def get_conversion_rate(self) -> float:
-        async with AsyncSessionLocal() as session:
+        async with database.AsyncSessionLocal() as session:
             total_result = await session.execute(select(ConversationModel))
             total = len(total_result.scalars().all())
             booked_result = await session.execute(
