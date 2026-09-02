@@ -15,13 +15,22 @@ class SMSHandler:
     """Handles inbound/outbound SMS with media support."""
 
     def __init__(self):
-        self.client = TwilioClient(
-            os.getenv("TWILIO_ACCOUNT_SID"),
-            os.getenv("TWILIO_AUTH_TOKEN"),
-        )
+        self.account_sid = os.getenv("TWILIO_ACCOUNT_SID", "").strip()
+        self.auth_token = os.getenv("TWILIO_AUTH_TOKEN", "").strip()
+        self.client = None
+        if self.account_sid and self.auth_token:
+            try:
+                self.client = TwilioClient(self.account_sid, self.auth_token)
+            except Exception as e:
+                logger.warning(f"Could not initialize Twilio client: {e}")
+        else:
+            logger.info("Twilio credentials not configured — SMS/MMS client running in simulation mode")
         self.from_number = os.getenv("TWILIO_PHONE_NUMBER", "+1234567890")
 
     def send_text(self, to: str, body: str) -> dict:
+        if not self.client:
+            logger.warning(f"SMS send skipped (no Twilio client configured): {to}")
+            return {"status": "skipped_no_credentials", "to": to}
         try:
             msg = self.client.messages.create(
                 body=body, from_=self.from_number, to=to,
@@ -32,6 +41,9 @@ class SMSHandler:
             return {"error": str(e), "to": to}
 
     def send_with_media(self, to: str, body: str, media_url: Optional[str] = None) -> dict:
+        if not self.client:
+            logger.warning(f"SMS with media skipped (no Twilio client configured): {to}")
+            return {"status": "skipped_no_credentials", "to": to}
         try:
             kwargs = {"body": body, "from_": self.from_number, "to": to}
             if media_url:
