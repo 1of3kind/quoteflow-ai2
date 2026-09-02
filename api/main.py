@@ -106,9 +106,14 @@ class PlanUpgrade(BaseModel):
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("QuoteFlow AI starting...")
-    # Fail closed at startup rather than exposing a predictable fallback key.
-    required_secret("FEEDBACK_API_KEY")
-    required_secret("OPENAI_API_KEY")
+    feedback_key = os.getenv("FEEDBACK_API_KEY", "").strip()
+    if not feedback_key or feedback_key.lower() in {"replace-me", "change-me"}:
+        logger.warning("FEEDBACK_API_KEY is not configured — admin endpoints will require setting this key")
+    
+    openai_key = os.getenv("OPENAI_API_KEY", "").strip()
+    if not openai_key or openai_key.lower() in {"replace-me", "change-me", "sk-..."}:
+        logger.warning("OPENAI_API_KEY is not configured — image analysis will use fallback/mock mode")
+
     await init_db()
     app.state.conversations = ConversationManager()
     app.state.sms = SMSHandler()

@@ -20,7 +20,11 @@ def required_secret(name: str) -> str:
 
 
 def api_key_is_valid(candidate: str) -> bool:
-    return hmac.compare_digest(candidate, required_secret("FEEDBACK_API_KEY"))
+    try:
+        secret = required_secret("FEEDBACK_API_KEY")
+        return hmac.compare_digest(candidate, secret)
+    except HTTPException:
+        return False
 
 
 async def verify_twilio_request(request: Request, form: dict[str, str]) -> None:
