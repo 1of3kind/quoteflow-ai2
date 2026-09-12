@@ -1,4 +1,4 @@
-"""Main FastAPI application for QuoteFlow AI.
+"""Main FastAPI application for E-ZFlow.
 
 Architecture:
   - Public webhooks (Twilio SMS/voice, email, Stripe) — signature-verified.
@@ -37,7 +37,7 @@ logger = logging.getLogger("api")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info("QuoteFlow AI starting env=%s", os.getenv("APP_ENV", "development"))
+    logger.info("E-ZFlow starting env=%s", os.getenv("APP_ENV", "development"))
     if not os.getenv("JWT_SECRET", "").strip():
         if os.getenv("APP_ENV") == "production":
             raise RuntimeError("JWT_SECRET is required in production")
@@ -48,11 +48,11 @@ async def lifespan(app: FastAPI):
     app.state.email = EmailProcessor()
     app.state.voice = VoiceHandler()
     yield
-    logger.info("QuoteFlow AI shutting down")
+    logger.info("E-ZFlow shutting down")
 
 
 app = FastAPI(
-    title="QuoteFlow AI",
+    title="E-ZFlow",
     description="AI-powered quoting for small businesses. Customers send photos, AI analyzes and generates instant quotes.",
     version="4.0.0",
     lifespan=lifespan,
@@ -73,7 +73,7 @@ install_error_handlers(app)
 async def api_info():
     """API discovery endpoint (the web landing page is served at '/')."""
     return {
-        "service": "QuoteFlow AI",
+        "service": "E-ZFlow",
         "version": "4.1.0",
         "docs": "/docs",
         "app": "/app.html",

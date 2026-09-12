@@ -281,7 +281,7 @@ class ConversationManager:
 
 RESPONSE_TEMPLATES = {
     "greeting": (
-        "Hi! I'm the QuoteFlow AI assistant. I can give you an instant quote "
+        "Hi! I'm the E-ZFlow assistant. I can give you an instant quote "
         "for your project. What type of work do you need?\n\n"
         "Reply with: landscaping, roofing, plumbing, autobody, or electrical"
     ),

@@ -47,7 +47,7 @@ class RealStripeGateway:
 
     def create_customer(self, email: str, name: str) -> str:
         customer = self.stripe.Customer.create(email=email, name=name,
-                                               metadata={"product": "quoteflow"})
+                                               metadata={"product": "ezflow"})
         return customer.id
 
     def create_subscription_checkout(self, *, stripe_customer_id: str, price_id: str,

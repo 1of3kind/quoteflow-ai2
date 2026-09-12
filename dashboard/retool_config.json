@@ -1,12 +1,12 @@
 {
   "app": {
-    "name": "QuoteFlow AI Dashboard",
+    "name": "E-ZFlow Dashboard",
     "description": "Contractor dashboard for managing quotes, appointments, materials, and payments",
     "version": "1.0.0"
   },
   "resources": [
     {
-      "name": "quoteflow_api",
+      "name": "ezflow_api",
       "type": "RESTQuery",
       "baseURL": "{{window.location.origin}}/dashboard",
       "headers": {
@@ -18,14 +18,14 @@
   "queries": [
     {
       "name": "getMetrics",
-      "resource": "quoteflow_api",
+      "resource": "ezflow_api",
       "method": "GET",
       "path": "/metrics",
       "transformer": "return data"
     },
     {
       "name": "getQuotes",
-      "resource": "quoteflow_api",
+      "resource": "ezflow_api",
       "method": "GET",
       "path": "/quotes",
       "params": {
@@ -36,7 +36,7 @@
     },
     {
       "name": "getAppointments",
-      "resource": "quoteflow_api",
+      "resource": "ezflow_api",
       "method": "GET",
       "path": "/appointments",
       "params": {
@@ -45,13 +45,13 @@
     },
     {
       "name": "getPickups",
-      "resource": "quoteflow_api",
+      "resource": "ezflow_api",
       "method": "GET",
       "path": "/materials/pickups"
     },
     {
       "name": "getRevenue",
-      "resource": "quoteflow_api",
+      "resource": "ezflow_api",
       "method": "GET",
       "path": "/revenue",
       "params": {
@@ -61,19 +61,19 @@
     },
     {
       "name": "getContractors",
-      "resource": "quoteflow_api",
+      "resource": "ezflow_api",
       "method": "GET",
       "path": "/contractors"
     },
     {
       "name": "getTradeBreakdown",
-      "resource": "quoteflow_api",
+      "resource": "ezflow_api",
       "method": "GET",
       "path": "/trades/breakdown"
     },
     {
       "name": "updateQuoteStatus",
-      "resource": "quoteflow_api",
+      "resource": "ezflow_api",
       "method": "POST",
       "path": "/quotes/{{selectedQuote.value}}/status",
       "body": {
@@ -451,10 +451,10 @@
     "theme": "light",
     "primaryColor": "#2563eb",
     "showHeader": true,
-    "headerTitle": "QuoteFlow AI",
+    "headerTitle": "E-ZFlow",
     "navigation": {
       "showLogo": true,
-      "logoURL": "https://quoteflow.ai/logo.png",
+      "logoURL": "https://ezflow.ai/logo.png",
       "items": [
         {
           "label": "Dashboard",

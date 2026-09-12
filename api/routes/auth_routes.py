@@ -90,7 +90,7 @@ async def _send_email(to: str, subject: str, body: str) -> None:
     """SendGrid when configured; otherwise log (never silently drop in prod)."""
     import os
     key = os.getenv("SENDGRID_API_KEY", "").strip()
-    sender = os.getenv("EMAIL_FROM", "no-reply@quoteflow.local")
+    sender = os.getenv("EMAIL_FROM", "no-reply@ezflow.local")
     if key:
         try:
             from sendgrid import SendGridAPIClient
@@ -105,13 +105,13 @@ async def _send_email(to: str, subject: str, body: str) -> None:
 
 
 def _verify_email_message(link: str) -> tuple[str, str]:
-    return ("Verify your QuoteFlow email",
-            f"Welcome to QuoteFlow!\n\nVerify your email address:\n{link}\n\n"
+    return ("Verify your E-ZFlow email",
+            f"Welcome to E-ZFlow!\n\nVerify your email address:\n{link}\n\n"
             f"This link expires in 48 hours.")
 
 
 def _reset_email_message(link: str) -> tuple[str, str]:
-    return ("Reset your QuoteFlow password",
+    return ("Reset your E-ZFlow password",
             f"A password reset was requested for your account.\n\n"
             f"Reset it here (valid for 60 minutes):\n{link}\n\n"
             f"If you did not request this, ignore this email — your password is unchanged.")

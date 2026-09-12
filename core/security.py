@@ -39,7 +39,7 @@ async def verify_twilio_request(request: Request, form: dict[str, str]) -> None:
 async def verify_email_webhook(request: Request) -> None:
     """Protect the email ingestion endpoint with a deployment-specific secret."""
     expected = required_secret("EMAIL_WEBHOOK_SECRET")
-    provided = request.headers.get("X-QuoteFlow-Webhook-Secret", "")
+    provided = request.headers.get("X-EZFlow-Webhook-Secret", "")
     if not hmac.compare_digest(provided, expected):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid email webhook secret")
 

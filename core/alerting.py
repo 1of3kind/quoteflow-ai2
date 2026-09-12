@@ -26,15 +26,15 @@ _window_start = time.monotonic()
 def send_alert(event: str, severity: str = "critical", **fields) -> None:
     """Queue an alert. Non-blocking; delivery failures are logged, never raised."""
     payload = {"event": event, "severity": severity,
-               "service": "quoteflow-ai", **fields}
+               "service": "ezflow", **fields}
     logger.error("alert %s %s", event,
                  " ".join(f"{k}={v}" for k, v in fields.items()))
     if not ALERT_WEBHOOK_URL:
         return
     body = json.dumps({
-        "text": f"🚨 QuoteFlow [{severity}] {event}: "
+        "text": f"🚨 E-ZFlow [{severity}] {event}: "
                 + ", ".join(f"{k}={v}" for k, v in fields.items()),
-        "quoteflow_alert": payload,
+        "ezflow_alert": payload,
     }).encode()
     threading.Thread(
         target=_post, args=(ALERT_WEBHOOK_URL, body), daemon=True).start()

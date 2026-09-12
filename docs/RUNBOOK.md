@@ -1,14 +1,14 @@
-# QuoteFlow AI — Production Runbook
+# E-ZFlow — Production Runbook
 
-Operational procedures for running QuoteFlow as a SaaS. Maps to launch gates 1–10.
+Operational procedures for running E-ZFlow as a SaaS. Maps to launch gates 1–10.
 
 ## Environments
 
 | Environment | URL | Branch | Purpose |
 |---|---|---|---|
 | local | http://localhost:8000 | any | development, mock Stripe/OpenAI |
-| staging | `https://staging.<your-domain>` (Render service `quoteflow-staging`) | `main` via CI | pre-release verification |
-| production | `https://app.<your-domain>` (Render service `quoteflow-prod`) | manual promote from staging | customers |
+| staging | `https://staging.<your-domain>` (Render service `ezflow-staging`) | `main` via CI | pre-release verification |
+| production | `https://app.<your-domain>` (Render service `ezflow-prod`) | manual promote from staging | customers |
 
 CI (`.github/workflows/ci.yml`) runs tests + a committed-secret scan on every push, then deploys `main` to staging through a Render deploy hook (`RENDER_STAGING_DEPLOY_HOOK` secret). Promotion to production is a manual job: merge `main` → `release`, or click "Manual Deploy" on the production service after staging verification. HTTPS and the custom domain are terminated by Render (managed certificates).
 
@@ -47,7 +47,7 @@ BACKUP_DIR=/backups BACKUP_RETENTION_DAYS=30 ./scripts/backup_db.sh
 - Retention: 30 days (override with `BACKUP_RETENTION_DAYS`).
 - **Restore drill (run quarterly, and after any provider change):**
   1. Provision a scratch database.
-  2. `DATABASE_URL=<scratch> ./scripts/restore_db.sh backups/quoteflow_<ts>.dump`
+  2. `DATABASE_URL=<scratch> ./scripts/restore_db.sh backups/ezflow_<ts>.dump`
   3. Confirm the verification query returns non-zero row counts for `organizations`, `users`, `quotes`, `jobs`.
   4. Record the drill date in the ops log. A restore that has never been rehearsed does not count.
 

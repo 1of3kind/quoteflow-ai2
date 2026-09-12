@@ -40,7 +40,7 @@ class NotificationService:
         if notification.channel in ("email", "both") and notification.to_email:
             results["email"] = await self.email.send_quote_email(
                 notification.to_email,
-                notification.subject or "Your Quote from QuoteFlow AI",
+                notification.subject or "Your Quote from E-ZFlow",
                 notification.body,
                 "quote_id",
             )
@@ -50,7 +50,7 @@ class NotificationService:
         return self.send(Notification(
             channel="both" if (phone and email) else ("sms" if phone else "email"),
             to_phone=phone, to_email=email,
-            subject=f"Your Quote #{quote_id} - QuoteFlow AI",
+            subject=f"Your Quote #{quote_id} - E-ZFlow",
             body=quote_text,
         ))
 

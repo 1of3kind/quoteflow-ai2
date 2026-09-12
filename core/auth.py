@@ -28,7 +28,7 @@ logger = logging.getLogger("auth")
 # ─── Configuration (env-driven, safe defaults) ─────────────────────────────
 
 JWT_SECRET = os.getenv("JWT_SECRET", "")
-JWT_ISSUER = "quoteflow-ai"
+JWT_ISSUER = "ezflow"
 ACCESS_TOKEN_TTL_MINUTES = int(os.getenv("ACCESS_TOKEN_TTL_MINUTES", "15"))
 REFRESH_TOKEN_TTL_DAYS = int(os.getenv("REFRESH_TOKEN_TTL_DAYS", "14"))
 EMAIL_VERIFY_TTL_HOURS = int(os.getenv("EMAIL_VERIFY_TTL_HOURS", "48"))

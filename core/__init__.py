@@ -1,1 +1,1 @@
-"""QuoteFlow AI core package."""
+"""E-ZFlow core package."""

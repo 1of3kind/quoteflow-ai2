@@ -1,4 +1,4 @@
-"""Tests for QuoteFlow AI."""
+"""Tests for E-ZFlow."""
 
 import pytest
 import pytest_asyncio
@@ -109,7 +109,7 @@ class TestConversationManager:
 class TestResponseTemplates:
     def test_greeting_response(self):
         resp = get_response("greeting")
-        assert "QuoteFlow" in resp
+        assert "E-ZFlow" in resp
 
     def test_analyzing_response(self):
         resp = get_response("analyzing")
@@ -118,12 +118,12 @@ class TestResponseTemplates:
 
 class TestDatabaseURLNormalization:
     def test_render_postgres_url_conversion(self):
-        render_url = "postgres://user:pass@dpg-abc1234:5432/quoteflow_db"
+        render_url = "postgres://user:pass@dpg-abc1234:5432/ezflow_db"
         normalized = normalize_database_url(render_url)
         assert normalized.startswith("postgresql+asyncpg://")
 
     def test_render_sslmode_conversion(self):
-        render_url = "postgresql://user:pass@dpg-abc1234.render.com:5432/quoteflow_db?sslmode=require"
+        render_url = "postgresql://user:pass@dpg-abc1234.render.com:5432/ezflow_db?sslmode=require"
         normalized = normalize_database_url(render_url)
         assert "postgresql+asyncpg://" in normalized
         assert "ssl=require" in normalized

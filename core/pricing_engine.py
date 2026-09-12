@@ -1,4 +1,4 @@
-"""QuoteFlow pricing engine — the single authoritative quote calculator (GATE 3).
+"""E-ZFlow pricing engine — the single authoritative quote calculator (GATE 3).
 
 Formula (all percentages are configurable per organization):
 

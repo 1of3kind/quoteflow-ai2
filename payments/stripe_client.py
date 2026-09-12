@@ -1,4 +1,4 @@
-"""Stripe payment processing for QuoteFlow AI."""
+"""Stripe payment processing for E-ZFlow."""
 
 import os
 import logging
@@ -40,7 +40,7 @@ class Subscription:
 
 
 class StripeClient:
-    """Handles all Stripe operations for QuoteFlow AI."""
+    """Handles all Stripe operations for E-ZFlow."""
 
     def __init__(self):
         self.stripe = stripe_lib

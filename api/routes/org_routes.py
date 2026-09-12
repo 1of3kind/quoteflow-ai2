@@ -230,8 +230,8 @@ async def invite_user(body: InviteUserIn, request: Request,
     import os
     base = _frontend_base()
     if base:
-        await _send_email(email, "Your QuoteFlow invite",
-                          f"You've been invited to {org.name} on QuoteFlow.\n"
+        await _send_email(email, "Your E-ZFlow invite",
+                          f"You've been invited to {org.name} on E-ZFlow.\n"
                           f"Verify your email: {base}/verify-email?token={verify_token}\n"
                           f"Then sign in with the password your administrator gave you.")
     return {"id": user.id, "email": user.email, "role": user.role}

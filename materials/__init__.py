@@ -1,1 +1,1 @@
-"""QuoteFlow AI materials ordering package."""
+"""E-ZFlow materials ordering package."""

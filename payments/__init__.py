@@ -1,1 +1,1 @@
-"""QuoteFlow AI payments package."""
+"""E-ZFlow payments package."""

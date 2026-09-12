@@ -38,7 +38,7 @@ def normalize_database_url(raw_url: Optional[str] = None) -> str:
     """
     # Dev fallback only — no credentials are ever hardcoded here. Real
     # connection strings (with passwords) come from DATABASE_URL at runtime.
-    url = (raw_url or os.getenv("DATABASE_URL", "postgresql+asyncpg://localhost:5432/quoteflow")).strip()
+    url = (raw_url or os.getenv("DATABASE_URL", "postgresql+asyncpg://localhost:5432/ezflow")).strip()
     
     if url.startswith("postgres://"):
         url = url.replace("postgres://", "postgresql+asyncpg://", 1)

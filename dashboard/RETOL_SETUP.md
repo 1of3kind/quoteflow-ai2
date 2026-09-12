@@ -1,8 +1,8 @@
-# QuoteFlow AI Retool Dashboard
+# E-ZFlow Retool Dashboard
 
 ## What This Is
 
-A visual admin dashboard for contractors to manage their QuoteFlow AI business — quotes, appointments, material pickups, revenue, and contractor accounts.
+A visual admin dashboard for contractors to manage their E-ZFlow business — quotes, appointments, material pickups, revenue, and contractor accounts.
 
 ## Screenshots
 
@@ -38,12 +38,12 @@ A visual admin dashboard for contractors to manage their QuoteFlow AI business �
 
 ### 2. Create New App
 - Click **Create new** → **App**
-- Name: `QuoteFlow AI Dashboard`
+- Name: `E-ZFlow Dashboard`
 
 ### 3. Connect Your API
 - Go to **Resources** (left sidebar)
 - Click **Create new** → **REST API**
-- Name: `QuoteFlow API`
+- Name: `E-ZFlow API`
 - Base URL: `https://your-render-url.com/dashboard`
 - Headers:
   - `Authorization`: `Bearer your-api-key`
@@ -144,7 +144,7 @@ Add a login screen:
 
 Change colors to match your brand:
 - **Settings** → **Theme**
-- Primary color: `#2563eb` (QuoteFlow blue)
+- Primary color: `#2563eb` (E-ZFlow blue)
 - Background: `#f8fafc`
 - Text: `#1e293b`
 

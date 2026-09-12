@@ -1,1 +1,1 @@
-"""QuoteFlow AI dashboard API for Retool."""
+"""E-ZFlow dashboard API for Retool."""

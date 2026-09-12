@@ -160,7 +160,7 @@ class BillingService:
         if not sub.stripe_customer_id:
             org = await session.get(OrganizationModel, organization_id)
             sub.stripe_customer_id = self.gateway.create_customer(
-                email=os.getenv("BILLING_EMAIL", f"billing+{organization_id}@quoteflow.local"),
+                email=os.getenv("BILLING_EMAIL", f"billing+{organization_id}@ezflow.local"),
                 name=org.name if org else organization_id)
 
         price_id = (plan_obj.stripe_price_id_monthly if billing_cycle == "monthly"

@@ -1,4 +1,4 @@
-# QuoteFlow AI
+# E-ZFlow
 
 AI-powered instant quoting for small businesses. Customers text, email, or call with photos of work they need done — the AI analyzes the images and generates a professional quote in under 2 minutes.
 
@@ -72,12 +72,12 @@ period, then access restriction. See `docs/RUNBOOK.md` for operations
 
 ## 🚀 Deployment on Render
 
-QuoteFlow AI includes a complete Infrastructure-as-Code [Render Blueprint](render.yaml) (`render.yaml`) that automatically deploys:
-1. **FastAPI Web Service** (`quoteflow-api`) with automated health checks (`/health`).
-2. **PostgreSQL Database** (`quoteflow-db`) for durable conversations, quotes, appointments, and billing accounts.
-3. **Redis / Key-Value Instance** (`quoteflow-redis`) for Celery task queuing.
-4. **Celery Background Worker** (`quoteflow-worker`) for async GPT-4 Vision image analysis & quote generation.
-5. **Celery Beat Scheduler** (`quoteflow-scheduler`) for automated follow-ups.
+E-ZFlow includes a complete Infrastructure-as-Code [Render Blueprint](render.yaml) (`render.yaml`) that automatically deploys:
+1. **FastAPI Web Service** (`ezflow-api`) with automated health checks (`/health`).
+2. **PostgreSQL Database** (`ezflow-db`) for durable conversations, quotes, appointments, and billing accounts.
+3. **Redis / Key-Value Instance** (`ezflow-redis`) for Celery task queuing.
+4. **Celery Background Worker** (`ezflow-worker`) for async GPT-4 Vision image analysis & quote generation.
+5. **Celery Beat Scheduler** (`ezflow-scheduler`) for automated follow-ups.
 
 👉 **See the complete [Render Deployment Guide (RENDER_DEPLOYMENT.md)](RENDER_DEPLOYMENT.md) for step-by-step instructions and webhook setup.**
 

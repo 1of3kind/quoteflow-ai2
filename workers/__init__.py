@@ -1,1 +1,1 @@
-"""QuoteFlow AI workers package."""
+"""E-ZFlow workers package."""

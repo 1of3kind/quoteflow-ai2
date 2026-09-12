@@ -1,1 +1,1 @@
-"""QuoteFlow AI tests package."""
+"""E-ZFlow tests package."""

@@ -14,7 +14,7 @@ def test_landing_page_served_at_root():
     with _client() as c:
         r = c.get("/")
         assert r.status_code == 200
-        assert "QuoteFlow" in r.text
+        assert "E-ZFlow" in r.text
         assert "Instant AI quotes" in r.text or "instant, explainable quote" in r.text
         assert "text/html" in r.headers["content-type"]
 
@@ -50,7 +50,7 @@ def test_api_info_moved_off_root():
     with _client() as c:
         r = c.get("/api")
         assert r.status_code == 200
-        assert r.json()["service"] == "QuoteFlow AI"
+        assert r.json()["service"] == "E-ZFlow"
         assert r.json()["app"] == "/app.html"
 
 

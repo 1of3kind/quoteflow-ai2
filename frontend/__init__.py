@@ -1,1 +1,1 @@
-"""QuoteFlow AI frontend package."""
+"""E-ZFlow frontend package."""

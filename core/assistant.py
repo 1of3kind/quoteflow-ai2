@@ -1,4 +1,4 @@
-"""QuoteFlow AI assistant (Growth Feature 1).
+"""E-ZFlow assistant (Growth Feature 1).
 
 Interprets a natural-language command and executes the actual workflow:
 

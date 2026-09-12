@@ -24,7 +24,7 @@ from materials.order_manager import get_order_manager
 logger = logging.getLogger("celery_tasks")
 
 celery_app = Celery(
-    "quoteflow",
+    "ezflow",
     broker=os.getenv("REDIS_URL", "redis://localhost:6379/0"),
     backend=os.getenv("REDIS_URL", "redis://localhost:6379/0"),
 )

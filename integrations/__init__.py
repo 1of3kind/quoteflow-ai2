@@ -1,1 +1,1 @@
-"""QuoteFlow AI integrations package."""
+"""E-ZFlow integrations package."""

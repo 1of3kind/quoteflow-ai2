@@ -16,10 +16,10 @@ import uuid
 from fastapi import Request
 from fastapi.responses import JSONResponse
 
-logger = logging.getLogger("quoteflow")
+logger = logging.getLogger("ezflow")
 
 SENSITIVE_HEADERS = {"authorization", "cookie", "x-twilio-signature",
-                     "stripe-signature", "x-quoteflow-webhook-secret"}
+                     "stripe-signature", "x-ezflow-webhook-secret"}
 SENSITIVE_PATH_MARKERS = ("token", "password", "secret", "webhook")
 
 

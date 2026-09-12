@@ -24,7 +24,7 @@ class VoiceHandler:
             timeout=5,
         )
         gather.say(
-            "Thank you for calling QuoteFlow. "
+            "Thank you for calling E-ZFlow. "
             "For landscaping, press 1. "
             "For roofing, press 2. "
             "For plumbing, press 3. "

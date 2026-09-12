@@ -66,7 +66,7 @@ class EmailProcessor:
         }
         payload = {
             "personalizations": [{"to": [{"email": to}]}],
-            "from": {"email": "quotes@quoteflow.ai", "name": "QuoteFlow AI"},
+            "from": {"email": "quotes@ezflow.ai", "name": "E-ZFlow"},
             "subject": subject,
             "content": [
                 {"type": "text/plain", "value": quote_text},

@@ -218,7 +218,7 @@ async def get_quote(quote_id: str,
 async def explain_quote(quote_id: str,
                         ctx: AuthContext = Depends(require_permission("quotes:read")),
                         session: AsyncSession = Depends(get_session)):
-    """Why did QuoteFlow give this price? Reproduce it from the stored
+    """Why did E-ZFlow give this price? Reproduce it from the stored
     snapshot and return the full breakdown (GATE 3)."""
     q = await scoped_or_404(session, QuoteModel, quote_id, ctx, "Quote")
     try:
