@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # full history for the secret scan
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Scan repo + history for committed secrets
+        run: python scripts/check_no_secrets.py
+
+      - name: Verify .env.example has no real values
+        run: |
+          ! grep -E '(sk-[A-Za-z0-9]{16,}|whsec_[A-Za-z0-9]{10,}|AC[a-f0-9]{20,}|SG\.[A-Za-z0-9_-]{20,}|postgres(ql)?\+?asyncpg?://[^ ]*:[^@ ]+@)' .env.example
+
+      - name: Run test suite
+        env:
+          APP_ENV: test
+          STRIPE_MODE: mock
+        run: python -m pytest tests/ -q --tb=short
+
+      - name: Smoke — app imports and boots
+        env:
+          APP_ENV: test
+          STRIPE_MODE: mock
+        run: python -c "from api.main import app; print('routes:', len(app.routes))"
+
+  deploy-staging:
+    needs: test
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+      - name: Trigger Render staging deploy
+        run: |
+          curl -fsS -X POST "${{ secrets.RENDER_STAGING_DEPLOY_HOOK }}" \
+            --header 'Content-Type: application/json' \
+            -d '{"clearCache": false}' || echo "deploy hook not configured yet"

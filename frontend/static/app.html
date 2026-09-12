@@ -1,0 +1,668 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>QuoteFlow AI — App</title>
+<style>
+  :root{--bg:#0b1220;--panel:#111a2e;--panel2:#16233c;--line:#243350;--text:#e8eefc;
+        --muted:#93a4c3;--brand:#3b82f6;--brand2:#22d3ee;--ok:#34d399;--bad:#f87171;--warn:#fbbf24}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Segoe UI',system-ui,Arial,sans-serif;background:var(--bg);color:var(--text);line-height:1.5}
+  a{color:var(--brand2);text-decoration:none}
+  button{font:inherit;cursor:pointer}
+  input,select,textarea{font:inherit;background:var(--panel2);border:1px solid var(--line);color:var(--text);
+    border-radius:8px;padding:9px 12px;width:100%}
+  input:focus,select:focus,textarea:focus{outline:2px solid var(--brand)}
+  label{font-size:.85rem;color:var(--muted);display:block;margin:10px 0 4px}
+  .btn{padding:9px 16px;border-radius:9px;border:1px solid var(--line);background:var(--panel2);color:var(--text);font-weight:600}
+  .btn.primary{background:linear-gradient(135deg,var(--brand),var(--brand2));border:none;color:#04121f}
+  .btn.danger{border-color:var(--bad);color:var(--bad);background:transparent}
+  .btn:disabled{opacity:.5;cursor:not-allowed}
+  .btn:hover{filter:brightness(1.12)}
+  /* auth screens */
+  .auth-wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}
+  .auth-card{width:420px;max-width:100%;background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:32px}
+  .auth-card h1{font-size:1.4rem;margin-bottom:4px}
+  .auth-card .muted{color:var(--muted);font-size:.9rem;margin-bottom:18px}
+  .logo{font-weight:700;font-size:1.3rem;margin-bottom:18px}
+  .logo span{color:var(--brand2)}
+  .switch{margin-top:16px;font-size:.9rem;color:var(--muted)}
+  .msg{margin-top:14px;padding:10px 12px;border-radius:8px;font-size:.9rem;display:none}
+  .msg.err{display:block;background:rgba(248,113,113,.12);color:var(--bad);border:1px solid rgba(248,113,113,.4)}
+  .msg.ok{display:block;background:rgba(52,211,153,.12);color:var(--ok);border:1px solid rgba(52,211,153,.4)}
+  /* app shell */
+  .shell{display:none;min-height:100vh}
+  .topbar{display:flex;align-items:center;justify-content:space-between;height:60px;padding:0 20px;
+    border-bottom:1px solid var(--line);position:sticky;top:0;background:rgba(11,18,32,.95);z-index:5}
+  .tabs{display:flex;gap:4px;flex-wrap:wrap}
+  .tab{padding:8px 14px;border-radius:8px;color:var(--muted);font-weight:600;font-size:.92rem;border:none;background:none}
+  .tab.active{color:var(--text);background:var(--panel2)}
+  .content{max-width:1100px;margin:0 auto;padding:24px 20px 80px}
+  h2.page{font-size:1.3rem;margin-bottom:4px}
+  .page-sub{color:var(--muted);font-size:.9rem;margin-bottom:20px}
+  .grid{display:grid;gap:16px}
+  .cols-3{grid-template-columns:repeat(auto-fit,minmax(220px,1fr))}
+  .cols-2{grid-template-columns:repeat(auto-fit,minmax(320px,1fr))}
+  .stat{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px}
+  .stat .n{font-size:1.7rem;font-weight:700}
+  .stat .l{color:var(--muted);font-size:.85rem}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:20px;margin-bottom:16px}
+  .panel h3{font-size:1rem;margin-bottom:12px}
+  table{width:100%;border-collapse:collapse;font-size:.9rem}
+  th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line)}
+  th{color:var(--muted);font-weight:600;font-size:.82rem}
+  .pill{display:inline-block;padding:2px 10px;border-radius:999px;font-size:.78rem;border:1px solid var(--line);background:var(--panel2)}
+  .pill.ok{color:var(--ok);border-color:rgba(52,211,153,.4)}
+  .pill.warn{color:var(--warn);border-color:rgba(251,191,36,.4)}
+  .pill.bad{color:var(--bad);border-color:rgba(248,113,113,.4)}
+  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:end}
+  .row>*{flex:1;min-width:130px}
+  .row .btn{flex:0 0 auto}
+  .chat{display:flex;flex-direction:column;gap:10px}
+  .chat .bubble{background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:12px 14px;max-width:760px}
+  .chat .bubble.me{align-self:end;background:rgba(59,130,246,.15);border-color:rgba(59,130,246,.4)}
+  .chat .bubble .meta{color:var(--muted);font-size:.78rem;margin-top:8px}
+  .checklist li{list-style:none;padding:6px 0;color:var(--muted)}
+  .checklist li.done{color:var(--ok)}
+  .checklist li.done::before{content:"✓ "}
+  .checklist li::before{content:"○ "}
+  .muted{color:var(--muted)}
+  pre.explain{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:14px;white-space:pre-wrap;font-family:inherit;font-size:.9rem}
+  .error-banner{display:none;background:rgba(248,113,113,.12);color:var(--bad);border:1px solid rgba(248,113,113,.4);
+    padding:10px 14px;border-radius:10px;margin-bottom:14px;font-size:.9rem}
+  .error-banner.ok{display:block;background:rgba(52,211,153,.12);color:var(--ok);border-color:rgba(52,211,153,.4)}
+</style>
+</head>
+<body>
+
+<!-- ══════════ AUTH ══════════ -->
+<div id="auth" class="auth-wrap">
+  <div class="auth-card">
+    <div class="logo">Quote<span>Flow</span> AI</div>
+    <div id="auth-signup" style="display:none">
+      <h1>Create your company</h1>
+      <p class="muted">14-day free trial. No credit card required.</p>
+      <form id="signup-form">
+        <label>Company name</label><input id="su-org" required minlength="2">
+        <label>Your name</label><input id="su-name">
+        <label>Email</label><input id="su-email" type="email" required>
+        <label>Password (min 10 chars, letters + numbers)</label><input id="su-pass" type="password" required minlength="10">
+        <button class="btn primary" style="width:100%;margin-top:16px" type="submit">Create company</button>
+      </form>
+      <div class="switch">Already have an account? <a href="#login" onclick="showAuth('login');return false">Log in</a></div>
+    </div>
+    <div id="auth-login">
+      <h1>Welcome back</h1>
+      <p class="muted">Log in to your workspace.</p>
+      <form id="login-form">
+        <label>Email</label><input id="li-email" type="email" required>
+        <label>Password</label><input id="li-pass" type="password" required>
+        <button class="btn primary" style="width:100%;margin-top:16px" type="submit">Log in</button>
+      </form>
+      <div class="switch" style="display:flex;justify-content:space-between">
+        <a href="#" onclick="forgotPrompt();return false">Forgot password?</a>
+        <a href="#signup" onclick="showAuth('signup');return false">Create a company</a>
+      </div>
+      <a href="/" style="display:block;margin-top:20px;font-size:.85rem">← Back to quoteflow.ai</a>
+    </div>
+    <div class="msg" id="auth-msg"></div>
+  </div>
+</div>
+
+<!-- ══════════ APP SHELL ══════════ -->
+<div id="app" class="shell">
+  <div class="topbar">
+    <div class="logo" style="margin:0">Quote<span>Flow</span> AI</div>
+    <div class="tabs" id="tabs">
+      <button class="tab active" data-tab="dashboard">Dashboard</button>
+      <button class="tab" data-tab="assistant">Assistant</button>
+      <button class="tab" data-tab="quotes">Quotes</button>
+      <button class="tab" data-tab="jobs">Jobs</button>
+      <button class="tab" data-tab="schedule">Schedule</button>
+      <button class="tab" data-tab="materials">Materials</button>
+      <button class="tab" data-tab="customers">Customers</button>
+      <button class="tab" data-tab="org">Settings</button>
+      <button class="tab" data-tab="billing">Billing</button>
+    </div>
+    <div style="display:flex;gap:10px;align-items:center">
+      <span class="muted" id="who" style="font-size:.85rem"></span>
+      <button class="btn" onclick="logout()">Log out</button>
+    </div>
+  </div>
+  <div class="content">
+    <div class="error-banner" id="banner"></div>
+
+    <div id="tab-dashboard"></div>
+    <div id="tab-assistant" style="display:none"></div>
+    <div id="tab-quotes" style="display:none"></div>
+    <div id="tab-jobs" style="display:none"></div>
+    <div id="tab-schedule" style="display:none"></div>
+    <div id="tab-materials" style="display:none"></div>
+    <div id="tab-customers" style="display:none"></div>
+    <div id="tab-org" style="display:none"></div>
+    <div id="tab-billing" style="display:none"></div>
+  </div>
+</div>
+
+<script>
+'use strict';
+// ─────────────────────────── API helper ───────────────────────────
+const S = {
+  get token(){return localStorage.getItem('qf_access')},
+  get refresh(){return localStorage.getItem('qf_refresh')},
+  set(auth){localStorage.setItem('qf_access',auth.access_token);
+            localStorage.setItem('qf_refresh',auth.refresh_token);
+            localStorage.setItem('qf_user',JSON.stringify(auth.user));
+            localStorage.setItem('qf_org',JSON.stringify(auth.organization))},
+  clear(){['qf_access','qf_refresh','qf_user','qf_org'].forEach(k=>localStorage.removeItem(k))},
+  user(){return JSON.parse(localStorage.getItem('qf_user')||'null')},
+  org(){return JSON.parse(localStorage.getItem('qf_org')||'null')},
+};
+
+async function api(path, {method='GET', body, retry=true}={}) {
+  const headers = {'Content-Type':'application/json'};
+  if (S.token) headers['Authorization'] = 'Bearer ' + S.token;
+  const res = await fetch(path, {method, headers, body: body!==undefined ? JSON.stringify(body) : undefined});
+  if (res.status === 401 && retry && S.refresh) {
+    const r = await fetch('/auth/refresh', {method:'POST', headers:{'Content-Type':'application/json'},
+                                            body: JSON.stringify({refresh_token: S.refresh})});
+    if (r.ok) { const data = await r.json(); S.set(data); return api(path,{method,body,retry:false}); }
+    S.clear(); showAuth('login');
+    throw new Error('Session expired — please log in again');
+  }
+  const data = await res.json().catch(()=>({}));
+  if (!res.ok) throw new Error(data.error || data.message || (typeof data.detail==='string'?data.detail:JSON.stringify(data.detail||data)) || res.statusText);
+  return data;
+}
+function $(sel){return document.querySelector(sel)}
+function el(tag, attrs={}, html=''){const e=document.createElement(tag);
+  for(const[k,v]of Object.entries(attrs)) e.setAttribute(k,v);
+  e.innerHTML=html;return e}
+function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+function money(v){return '$'+Number(v||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}
+function showBanner(msg, ok){const b=$('#banner');b.textContent=msg;b.className=ok?'error-banner ok':'error-banner';setTimeout(()=>b.className='error-banner',6000)}
+function msg(sel, text, ok){const m=$(sel);m.textContent=text;m.className='msg '+(ok?'ok':'err');setTimeout(()=>{m.className='msg';m.textContent=''},7000)}
+
+// ─────────────────────────── Auth flow ───────────────────────────
+function showAuth(which){
+  $('#auth-login').style.display = which==='login'?'block':'none';
+  $('#auth-signup').style.display = which==='signup'?'block':'none';
+  $('#auth').style.display='flex'; $('#app').style.display='none';
+  $('#auth-msg').className='msg';
+}
+function showApp(){
+  $('#auth').style.display='none'; $('#app').style.display='block';
+  const u=S.user(); $('#who').textContent = u ? `${u.role} · ${S.org()?.name||''}` : '';
+  switchTab('dashboard');
+}
+function logout(){
+  const rt=S.refresh;
+  if(rt) fetch('/auth/logout',{method:'POST',headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({refresh_token:rt})}).catch(()=>{});
+  S.clear(); showAuth('login');
+}
+async function forgotPrompt(){
+  const email = prompt('Enter your account email — a reset link will be sent:');
+  if(!email) return;
+  const r = await fetch('/auth/forgot-password',{method:'POST',headers:{'Content-Type':'application/json'},
+                  body:JSON.stringify({email})});
+  const d = await r.json();
+  msg('#auth-msg','Reset link sent — check your email.' + (d.dev_reset_token?` (dev token: ${d.dev_reset_token})`:''), true);
+}
+
+$('#login-form').addEventListener('submit', async e=>{
+  e.preventDefault();
+  try{
+    const r = await fetch('/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({email:$('#li-email').value.trim(),password:$('#li-pass').value})});
+    const d = await r.json();
+    if(!r.ok) throw new Error(d.error||d.detail||'Login failed');
+    S.set(d); showApp();
+  }catch(err){ msg('#auth-msg', err.message, false) }
+});
+
+$('#signup-form').addEventListener('submit', async e=>{
+  e.preventDefault();
+  try{
+    const r = await fetch('/auth/signup',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({organization_name:$('#su-org').value.trim(),
+                           full_name:$('#su-name').value.trim(),
+                           email:$('#su-email').value.trim(),
+                           password:$('#su-pass').value})});
+    const d = await r.json();
+    if(!r.ok) throw new Error(d.error||d.detail||'Signup failed');
+    S.set(d);
+    if(d.dev_email_verify_token){
+      await fetch('/auth/verify-email',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({token:d.dev_email_verify_token})});
+    }
+    showApp();
+  }catch(err){ msg('#auth-msg', err.message, false) }
+});
+
+// ─────────────────────────── Tabs ───────────────────────────
+const RENDER = {}; // per-tab renderers, set below
+let activeTab = 'dashboard';
+document.getElementById('tabs').addEventListener('click', e=>{
+  const t = e.target.closest('.tab'); if(!t) return;
+  switchTab(t.dataset.tab);
+});
+function switchTab(name){
+  activeTab = name;
+  document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active', t.dataset.tab===name));
+  document.querySelectorAll('[id^="tab-"]').forEach(d=>d.style.display='none');
+  const pane = $('#tab-'+name); pane.style.display='block';
+  pane.innerHTML = '<p class="muted">Loading…</p>';
+  (RENDER[name]||(()=>{pane.innerHTML=''}))().catch(err=>{
+    pane.innerHTML=''; showBanner(err.message);
+  });
+}
+
+// ─────────────────────────── Dashboard ───────────────────────────
+RENDER.dashboard = async ()=>{
+  const d = await api('/dashboard/summary');
+  const ob = await api('/org/onboarding');
+  const pending = ob.steps.filter(s=>!s.done);
+  const pane = $('#tab-dashboard'); pane.innerHTML='';
+  const stats = el('div',{class:'grid cols-3'});
+  const mk=(n,l)=>stats.appendChild(el('div',{class:'stat'},`<div class="n">${n}</div><div class="l">${l}</div>`));
+  mk(d.active_jobs,'Active jobs'); mk(d.pending_quotes,'Pending quotes'); mk(d.approved_quotes,'Approved quotes');
+  mk(money(d.revenue_this_month),'Revenue this month'); mk(money(d.profit_this_month),'Profit this month');
+  pane.appendChild(stats);
+
+  const two = el('div',{class:'grid cols-2',style:'margin-top:16px'});
+  const up = el('div',{class:'panel'},`<h3>Upcoming jobs</h3>` + (d.upcoming_jobs.length?
+    `<table><tr><th>Job</th><th>Trade</th><th>When</th><th>Status</th></tr>`+
+    d.upcoming_jobs.map(j=>`<tr><td>${esc(j.title||'—')}</td><td>${esc(j.trade)}</td>
+      <td>${j.scheduled_date?new Date(j.scheduled_date).toLocaleString():'—'}</td>
+      <td><span class="pill">${esc(j.status)}</span></td></tr>`).join('')+`</table>`
+    :`<p class="muted">Nothing scheduled yet.</p>`));
+  const act = el('div',{class:'panel'},`<h3>Recent activity</h3>` + (d.recent_activity.length?
+    `<ul class="checklist">`+d.recent_activity.map(a=>
+      `<li class="done">${esc(a.action)} <span class="muted">· ${new Date(a.at).toLocaleString()}</span></li>`).join('')+`</ul>`
+    :`<p class="muted">No activity yet.</p>`));
+  two.append(up, act); pane.appendChild(two);
+
+  if(pending.length){
+    pane.appendChild(el('div',{class:'panel'},`<h3>Onboarding — ${ob.steps.filter(s=>s.done).length}/${ob.steps.length} done</h3>
+      <ul class="checklist">${ob.steps.map(s=>
+        `<li class="${s.done?'done':''}">${esc(s.step.replaceAll('_',' '))}</li>`).join('')}</ul>`));
+  }
+};
+
+// ─────────────────────────── Assistant ───────────────────────────
+RENDER.assistant = async ()=>{
+  const pane = $('#tab-assistant'); pane.innerHTML='';
+  const panel = el('div',{class:'panel'});
+  panel.appendChild(el('h3',{},'AI assistant'));
+  panel.appendChild(el('p',{class:'muted',style:'margin-bottom:12px'},
+    'Say what you want. Example: “Create a quote for John Smith. Replace the water heater and schedule it for Tuesday.”'));
+  const log = el('div',{class:'chat',id:'chat-log'});
+  const input = el('div',{class:'row',style:'margin-top:12px'});
+  const text = el('input',{id:'chat-input',placeholder:'e.g. Quote for Alice Green, rewiring the garage panel, 8 hours, send it'});
+  const go = el('button',{class:'btn primary',id:'chat-go'},'Run');
+  input.append(text,go); panel.append(log,input); pane.appendChild(panel);
+
+  async function run(){
+    const t = text.value.trim(); if(!t) return;
+    text.value=''; go.disabled=true;
+    log.appendChild(el('div',{class:'bubble me'},esc(t)));
+    const thinking = el('div',{class:'bubble'},'Working…'); log.appendChild(thinking);
+    try{
+      const d = await api('/assistant/command',{method:'POST',body:{text:t}});
+      thinking.innerHTML = `<strong>${esc(d.summary)}</strong>` +
+        (d.actions.length?`<div class="meta">`+d.actions.map(a=>{
+          if(a.action==='quote_created') return `Quote <a href="#" onclick="explainQuote('${a.quote_id}');return false">${a.quote_id}</a> · ${money(a.recommended_price)}`;
+          if(a.action==='job_scheduled') return `Job ${a.job_id?.slice(0,8)}… · ${a.scheduled_date?new Date(a.scheduled_date).toLocaleDateString():''}`;
+          if(a.action==='customer_created'||a.action==='customer_found') return `Customer: ${esc(a.name)}`;
+          return esc(a.action);
+        }).join(' · ')+`</div>`:'');
+    }catch(err){ thinking.innerHTML = `<span style="color:var(--bad)">${esc(err.message)}</span>`; }
+    go.disabled=false; log.scrollTop=log.scrollHeight;
+  }
+  go.addEventListener('click',run);
+  text.addEventListener('keydown',e=>{if(e.key==='Enter')run()});
+};
+
+// ─────────────────────────── Quotes ───────────────────────────
+window.explainQuote = async id=>{
+  try{
+    const d = await api(`/quotes/${id}/explain`);
+    alert(d.narrative + '\n\n' + d.explanation);
+  }catch(err){ showBanner(err.message) }
+};
+
+RENDER.quotes = async ()=>{
+  const [customers, quotes, skills] = await Promise.all([
+    api('/org/customers'), api('/quotes'), api('/org/skills')]);
+  const pane = $('#tab-quotes'); pane.innerHTML='';
+
+  const form = el('div',{class:'panel'},`<h3>New quote</h3>
+    <div class="row">
+      <div><label>Customer</label><select id="q-cust">${customers.customers.map(c=>`<option value="${c.id}">${esc(c.name)}</option>`).join('')}</select></div>
+      <div><label>Trade</label><select id="q-trade">
+        ${['roofing','plumbing','electrical','landscaping','autobody'].map(t=>`<option>${t}</option>`).join('')}</select></div>
+      <div><label>Skill</label><select id="q-skill">${skills.skills.filter(s=>s.is_active).map(s=>`<option value="${s.id}" data-rate="${s.hourly_rate}" data-name="${esc(s.name)}" data-level="${s.level}">${esc(s.name)} — $${s.hourly_rate}/h</option>`).join('')}</select></div>
+      <div><label>Workers</label><input id="q-workers" type="number" min="1" value="1"></div>
+      <div><label>Hours</label><input id="q-hours" type="number" min="0" step="0.5" value="4"></div>
+      <div><label>Material name</label><input id="q-mat" placeholder="optional"></div>
+      <div><label>Unit cost</label><input id="q-mat-cost" type="number" min="0" step="0.01"></div>
+      <div><label>Qty</label><input id="q-mat-qty" type="number" min="0" step="1"></div>
+      <button class="btn primary" id="q-go">Create quote</button>
+    </div>`);
+  pane.appendChild(form);
+  form.querySelector('#q-go').addEventListener('click', async ()=>{
+    const skillSel = form.querySelector('#q-skill');
+    const opt = skillSel.selectedOptions[0];
+    const labor = [{skill_id: opt?.value, skill_name: opt?.dataset.name||'Labor',
+                    skill_level: opt?.dataset.level||'standard',
+                    workers: +form.querySelector('#q-workers').value||1,
+                    hours: +form.querySelector('#q-hours').value||0,
+                    hourly_rate: +opt?.dataset.rate||0}];
+    const matName = form.querySelector('#q-mat').value.trim();
+    const materials = matName ? [{name: matName, unit_cost:+form.querySelector('#q-mat-cost').value||0,
+                                  quantity:+form.querySelector('#q-mat-qty').value||1}] : [];
+    try{
+      const d = await api('/quotes',{method:'POST',body:{
+        org_customer_id: form.querySelector('#q-cust').value,
+        trade: form.querySelector('#q-trade').value,
+        title: 'Quote from web app',
+        labor_lines: labor, material_lines: materials}});
+      showBanner(`Quote ${d.quote_id} created — ${money(d.result.recommended_price)} (${money(d.result.total_with_tax)} with tax)`, true);
+      switchTab('quotes');
+    }catch(err){ showBanner(err.message) }
+  });
+
+  const table = el('div',{class:'panel'},`<h3>All quotes</h3>` + (quotes.quotes.length?
+    `<table><tr><th>ID</th><th>Customer</th><th>Trade</th><th>Total</th><th>Status</th><th></th></tr>`+
+    quotes.quotes.map(q=>`<tr>
+      <td>${esc(q.quote_id)}</td><td>${esc(q.customer_name||'—')}</td><td>${esc(q.trade)}</td>
+      <td><strong>${money(q.total)}</strong></td>
+      <td><span class="pill ${q.status==='accepted'?'ok':q.status==='sent'?'warn':''}">${esc(q.status)}</span></td>
+      <td>
+        <button class="btn" onclick="quoteAction('explain','${q.quote_id}')">Why?</button>
+        ${q.status==='draft'?`<button class="btn" onclick="quoteAction('send','${q.quote_id}')">Send</button>`:''}
+        ${q.status==='sent'?`<button class="btn primary" onclick="quoteAction('accept','${q.quote_id}')">Accept</button>`:''}
+        ${q.status==='accepted'?`<button class="btn" onclick="quoteAction('materials','${q.quote_id}')">Order materials</button>`:''}
+      </td></tr>`).join('')+`</table>`
+    :`<p class="muted">No quotes yet — create one above or use the Assistant.</p>`));
+  pane.appendChild(table);
+};
+
+window.quoteAction = async (action, id)=>{
+  try{
+    if(action==='explain'){
+      const d = await api(`/quotes/${id}/explain`);
+      alert(d.narrative + '\n\n' + d.explanation); return;
+    }
+    if(action==='send'){ await api(`/quotes/${id}/send`,{method:'POST'}); showBanner('Quote sent', true); }
+    if(action==='accept'){ await api(`/quotes/${id}/accept`,{method:'POST'}); showBanner('Quote accepted — job created', true); }
+    if(action==='materials'){
+      const d = await api(`/quotes/${id}/materials-order`,{method:'POST'});
+      showBanner(d.status==='no_materials_needed'?'No materials on this quote':`Order ${d.order_id} created`);
+    }
+    switchTab('quotes');
+  }catch(err){ showBanner(err.message) }
+};
+
+// ─────────────────────────── Jobs ───────────────────────────
+RENDER.jobs = async ()=>{
+  const jobs = await api('/jobs');
+  const pane = $('#tab-jobs'); pane.innerHTML='';
+  pane.appendChild(el('div',{class:'panel'},`<h3>All jobs</h3>` + (jobs.jobs.length?
+    `<table><tr><th>Job</th><th>Customer</th><th>Trade</th><th>Scheduled</th><th>Status</th><th></th></tr>`+
+    jobs.jobs.map(j=>`<tr>
+      <td>${esc(j.title||'—')}</td><td>${esc(j.customer_name||'—')}</td><td>${esc(j.trade)}</td>
+      <td>${j.scheduled_date?new Date(j.scheduled_date).toLocaleString():'—'}</td>
+      <td><span class="pill ${j.status==='completed'?'ok':j.status==='in_progress'?'warn':''}">${esc(j.status)}</span></td>
+      <td>
+        ${j.status!=='completed'&&j.status!=='canceled'?`<button class="btn" onclick="jobStatus('${j.id}','in_progress')">Start</button>
+        <button class="btn primary" onclick="jobStatus('${j.id}','completed')">Complete</button>`:''}
+      </td></tr>`).join('')+`</table>`
+    :`<p class="muted">No jobs yet. Accept a quote or use the Assistant.</p>`)));
+};
+window.jobStatus = async (id,status)=>{
+  try{ await api(`/jobs/${id}`,{method:'PATCH',body:{status}}); switchTab('jobs'); }
+  catch(err){ showBanner(err.message) }
+};
+
+// ─────────────────────────── Schedule ───────────────────────────
+RENDER.schedule = async ()=>{
+  const [skills, users] = await Promise.all([api('/org/skills'), api('/org/users')]);
+  const pane = $('#tab-schedule'); pane.innerHTML='';
+  const today = new Date().toISOString().slice(0,10);
+  pane.appendChild(el('div',{class:'panel'},`
+    <h3>Day schedule</h3>
+    <div class="row">
+      <div><label>Date</label><input type="date" id="sched-date" value="${today}"></div>
+      <button class="btn primary" id="sched-go">Load</button>
+    </div>
+    <div id="sched-out" style="margin-top:14px"></div>`));
+  pane.appendChild(el('div',{class:'panel'},`
+    <h3>Assign a worker to a job</h3>
+    <div class="row">
+      <div><label>Job</label><select id="as-job"></select></div>
+      <div><label>Worker</label><select id="as-user">${users.users.filter(u=>u.is_active).map(u=>`<option value="${u.id}">${esc(u.full_name||u.email)} (${u.role})</option>`).join('')}</select></div>
+      <div><label>Skill</label><select id="as-skill"><option value="">— any —</option>${skills.skills.filter(s=>s.is_active).map(s=>`<option value="${s.id}">${esc(s.name)}</option>`).join('')}</select></div>
+      <button class="btn primary" id="as-go">Assign</button>
+    </div>`));
+
+  async function loadDay(){
+    const date = pane.querySelector('#sched-date').value;
+    const d = await api(`/jobs/schedule/day?date=${date}`);
+    const out = pane.querySelector('#sched-out');
+    out.innerHTML = d.jobs.length ? d.jobs.map(j=>`
+      <div style="border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:10px">
+        <strong>${esc(j.title||j.trade)}</strong> · ${new Date(j.scheduled_date).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}
+        · <span class="pill">${esc(j.status)}</span>
+        <div class="muted" style="margin-top:4px">Crew: ${j.crew.length?j.crew.map(c=>esc(c.worker_name)).join(', '):'no one assigned yet'}</div>
+      </div>`).join('') : '<p class="muted">No jobs scheduled this day.</p>';
+  }
+  pane.querySelector('#sched-go').addEventListener('click',loadDay);
+
+  const jobs = await api('/jobs');
+  const sel = pane.querySelector('#as-job');
+  sel.innerHTML = jobs.jobs.filter(j=>j.status!=='completed'&&j.status!=='canceled')
+    .map(j=>`<option value="${j.id}">${esc(j.title||j.trade)} — ${j.scheduled_date?new Date(j.scheduled_date).toLocaleDateString():'unscheduled'}</option>`).join('');
+  pane.querySelector('#as-go').addEventListener('click', async ()=>{
+    try{
+      await api(`/jobs/${sel.value}/assign`,{method:'POST',body:{
+        user_id: pane.querySelector('#as-user').value,
+        skill_id: pane.querySelector('#as-skill').value || null}});
+      showBanner('Worker assigned', true); loadDay();
+    }catch(err){ showBanner(err.message) }
+  });
+  await loadDay();
+};
+
+// ─────────────────────────── Materials ───────────────────────────
+RENDER.materials = async ()=>{
+  const [suppliers, catalog, orders] = await Promise.all([
+    api('/materials/suppliers'), api('/materials/catalog'), api('/materials/orders')]);
+  const pane = $('#tab-materials'); pane.innerHTML='';
+
+  pane.appendChild(el('div',{class:'grid cols-2'},`
+    <div class="panel"><h3>Add supplier</h3>
+      <div class="row">
+        <div><label>Name</label><input id="sup-name"></div>
+        <button class="btn primary" id="sup-go">Add</button>
+      </div></div>
+    <div class="panel"><h3>Add catalog item (SKU)</h3>
+      <div class="row">
+        <div><label>Supplier</label><select id="ci-sup">${suppliers.suppliers.map(s=>`<option value="${s.id}">${esc(s.name)}</option>`).join('')}</select></div>
+        <div><label>SKU</label><input id="ci-sku"></div>
+        <div><label>Name</label><input id="ci-name"></div>
+        <div><label>Unit price</label><input id="ci-price" type="number" step="0.01"></div>
+        <div><label>Qty available</label><input id="ci-qty" type="number"></div>
+        <button class="btn primary" id="ci-go">Add</button>
+      </div></div>`));
+
+  pane.appendChild(el('div',{class:'panel'},`<h3>Catalog</h3>` + (catalog.items.length?
+    `<table><tr><th>SKU</th><th>Name</th><th>Unit price</th><th>Available</th></tr>`+
+    catalog.items.map(i=>`<tr><td>${esc(i.sku)}</td><td>${esc(i.name)}</td>
+      <td>${money(i.unit_price)}</td>
+      <td>${i.quantity_available>0?`<span class="pill ok">${i.quantity_available} in stock</span>`:`<span class="pill bad">out of stock</span>`}</td></tr>`).join('')+`</table>`
+    :`<p class="muted">No catalog items yet.</p>`)));
+
+  const STATUSES=['placed','confirmed','received','canceled'];
+  pane.appendChild(el('div',{class:'panel'},`<h3>Orders</h3>` + (orders.orders.length?
+    `<table><tr><th>Order</th><th>Supplier</th><th>Total</th><th>Status</th><th>Advance to</th></tr>`+
+    orders.orders.map(o=>`<tr><td>${esc(o.order_id)}</td><td>${esc(o.items[0]?.name||'')}</td>
+      <td>${money(o.total)}</td><td><span class="pill ${o.status==='received'?'ok':o.status==='canceled'?'bad':'warn'}">${esc(o.status)}</span></td>
+      <td>${o.status!=='received'&&o.status!=='canceled'?
+        `<select id="st-${o.order_id}">${STATUSES.map(s=>`<option>${s}</option>`).join('')}</select>
+         <button class="btn" onclick="orderStatus('${o.order_id}')">Move</button>`:''}</td></tr>`).join('')+`</table>`
+    :`<p class="muted">No orders yet. Accept a quote with materials, then order from the Quotes tab.</p>`)));
+
+  pane.querySelector('#sup-go').addEventListener('click', async ()=>{
+    try{ await api('/materials/suppliers',{method:'POST',body:{name:pane.querySelector('#sup-name').value.trim()}});
+         showBanner('Supplier added', true); switchTab('materials'); }catch(err){showBanner(err.message)}});
+  pane.querySelector('#ci-go').addEventListener('click', async ()=>{
+    try{ await api('/materials/catalog',{method:'POST',body:{
+        supplier_id:pane.querySelector('#ci-sup').value, sku:pane.querySelector('#ci-sku').value.trim(),
+        name:pane.querySelector('#ci-name').value.trim(), unit_price:+pane.querySelector('#ci-price').value,
+        quantity_available:+pane.querySelector('#ci-qty').value||0}});
+         showBanner('Catalog item added', true); switchTab('materials'); }catch(err){showBanner(err.message)}});
+};
+window.orderStatus = async id=>{
+  try{
+    const status = document.getElementById('st-'+id).value;
+    await api(`/materials/orders/${id}/status`,{method:'PATCH',body:{status}});
+    showBanner('Order updated', true); switchTab('materials');
+  }catch(err){ showBanner(err.message) }
+};
+
+// ─────────────────────────── Customers ───────────────────────────
+RENDER.customers = async ()=>{
+  const customers = await api('/org/customers');
+  const pane = $('#tab-customers'); pane.innerHTML='';
+  pane.appendChild(el('div',{class:'panel'},`<h3>Add customer</h3>
+    <div class="row">
+      <div><label>Name</label><input id="cust-name"></div>
+      <div><label>Phone</label><input id="cust-phone"></div>
+      <div><label>Email</label><input id="cust-email" type="email"></div>
+      <button class="btn primary" id="cust-go">Add</button>
+    </div>`));
+  pane.appendChild(el('div',{class:'panel'},`<h3>All customers</h3>` + (customers.customers.length?
+    `<table><tr><th>Name</th><th>Phone</th><th>Email</th></tr>`+
+    customers.customers.map(c=>`<tr><td>${esc(c.name)}</td><td>${esc(c.phone||'—')}</td><td>${esc(c.email||'—')}</td></tr>`).join('')+`</table>`
+    :`<p class="muted">No customers yet.</p>`)));
+  pane.querySelector('#cust-go').addEventListener('click', async ()=>{
+    try{ await api('/org/customers',{method:'POST',body:{
+        name:pane.querySelector('#cust-name').value.trim(),
+        phone:pane.querySelector('#cust-phone').value.trim()||null,
+        email:pane.querySelector('#cust-email').value.trim()||null}});
+      showBanner('Customer added', true); switchTab('customers'); }catch(err){showBanner(err.message)}});
+};
+
+// ─────────────────────────── Org settings ───────────────────────────
+RENDER.org = async ()=>{
+  const [org, ob] = await Promise.all([api('/org'), api('/org/onboarding')]);
+  const pane = $('#tab-org'); pane.innerHTML='';
+  pane.appendChild(el('div',{class:'panel'},`<h3>${esc(org.name)}</h3>
+    <p class="muted">Business info & pricing defaults (owner/admin only)</p>
+    <div class="row" style="margin-top:10px">
+      <div><label>Phone</label><input id="bi-phone" value="${esc(org.business_info.phone||'')}"></div>
+      <div><label>Email</label><input id="bi-email" value="${esc(org.business_info.email||'')}"></div>
+      <div><label>Website</label><input id="bi-website" value="${esc(org.business_info.website||'')}"></div>
+      <div><label>Logo URL</label><input id="bi-logo" value="${esc(org.business_info.logo_url||'')}"></div>
+      <button class="btn primary" id="bi-go">Save business info</button>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <div><label>Overhead %</label><input id="pr-over" type="number" step="0.01" value="${org.settings.overhead_pct}"></div>
+      <div><label>Target margin %</label><input id="pr-margin" type="number" step="0.01" value="${org.settings.profit_margin_pct}"></div>
+      <div><label>Tax rate %</label><input id="pr-tax" type="number" step="0.01" value="${org.settings.tax_rate}"></div>
+      <div><label>Quote valid days</label><input id="pr-valid" type="number" value="${org.settings.valid_days}"></div>
+      <button class="btn primary" id="pr-go">Save pricing</button>
+    </div>`));
+  pane.appendChild(el('div',{class:'panel'},`<h3>Onboarding — ${ob.steps.filter(s=>s.done).length}/${ob.steps.length}</h3>
+    <ul class="checklist">${ob.steps.map(s=>`<li class="${s.done?'done':''}">${esc(s.step.replaceAll('_',' '))}</li>`).join('')}</ul>`));
+
+  pane.querySelector('#bi-go').addEventListener('click', async ()=>{
+    try{ await api('/org/business-info',{method:'PATCH',body:{
+        phone:pane.querySelector('#bi-phone').value.trim(),
+        email:pane.querySelector('#bi-email').value.trim(),
+        website:pane.querySelector('#bi-website').value.trim(),
+        logo_url:pane.querySelector('#bi-logo').value.trim()}});
+      showBanner('Business info saved', true); }catch(err){showBanner(err.message)}});
+  pane.querySelector('#pr-go').addEventListener('click', async ()=>{
+    try{ await api('/org/pricing',{method:'PATCH',body:{
+        overhead_pct:+pane.querySelector('#pr-over').value,
+        profit_margin_pct:+pane.querySelector('#pr-margin').value,
+        tax_rate:+pane.querySelector('#pr-tax').value,
+        valid_days:+pane.querySelector('#pr-valid').value}});
+      showBanner('Pricing defaults saved', true); }catch(err){showBanner(err.message)}});
+};
+
+// ─────────────────────────── Billing ───────────────────────────
+RENDER.billing = async ()=>{
+  const pane = $('#tab-billing'); pane.innerHTML='';
+  try{
+    const [sub, plans, invoices] = await Promise.all([
+      api('/billing/subscription'), api('/billing/plans'), api('/billing/invoices')]);
+    const st = sub.access||{};
+    const pillCls = sub.status==='active'?'ok':(sub.status==='trialing'||st.state==='grace')?'warn':'bad';
+    pane.appendChild(el('div',{class:'panel'},`
+      <h3>Subscription — <span class="pill ${pillCls}">${esc(sub.status)}${st.state==='grace'?' (grace)':''}</span></h3>
+      <p class="muted">Plan: ${esc(sub.plan_name)} · Quotes this period: ${sub.quotes_used_this_period}
+        ${sub.quotes_per_month_limit===null?' (unlimited)':' / '+sub.quotes_per_month_limit}
+        ${sub.trial_ends_at?` · Trial ends ${new Date(sub.trial_ends_at).toLocaleDateString()}`:''}</p>
+      <div class="row" style="margin-top:12px">
+        <button class="btn" id="bl-portal">Billing portal</button>
+        <button class="btn danger" id="bl-cancel">Cancel at period end</button>
+      </div>`));
+    pane.appendChild(el('div',{class:'panel'},`<h3>Change plan</h3>
+      <div class="row">${plans.plans.map(p=>`
+        <button class="btn" onclick="choosePlan('${p.id}','monthly')">Choose ${esc(p.name)} — $${p.price_monthly}/mo</button>
+        <button class="btn" onclick="choosePlan('${p.id}','annual')">Annual $${p.price_annual}/yr</button>`).join('')}
+      </div>
+      <p class="muted" style="margin-top:8px">Checkout opens on Stripe. Your subscription activates when Stripe's webhook confirms payment.</p>`));
+    pane.appendChild(el('div',{class:'panel'},`<h3>Invoices</h3>` + (invoices.invoices.length?
+      `<table><tr><th>Date</th><th>Amount</th><th>Status</th></tr>`+
+      invoices.invoices.map(i=>`<tr><td>${new Date(i.created_at).toLocaleDateString()}</td>
+        <td>${money(i.amount_due)}</td><td><span class="pill ${i.status==='paid'?'ok':'warn'}">${esc(i.status)}</span></td></tr>`).join('')+`</table>`
+      :`<p class="muted">No invoices yet.</p>`)));
+    pane.querySelector('#bl-portal').addEventListener('click', async ()=>{
+      try{ const d = await api('/billing/portal',{method:'POST'}); window.open(d.portal_url,'_blank'); }
+      catch(err){ showBanner(err.message) }});
+    pane.querySelector('#bl-cancel').addEventListener('click', async ()=>{
+      if(!confirm('Cancel your subscription at the end of the billing period?')) return;
+      try{ await api('/billing/cancel',{method:'POST'}); showBanner('Cancellation scheduled', true); switchTab('billing'); }
+      catch(err){ showBanner(err.message) }});
+  }catch(err){
+    pane.appendChild(el('div',{class:'panel'},`<h3>Billing</h3>
+      <p class="muted">${esc(err.message)} ${err.message.includes('403')?'(owner role required)':''}</p>`));
+  }
+};
+window.choosePlan = async (plan,cycle)=>{
+  try{
+    const d = await api('/billing/checkout',{method:'POST',body:{plan,billing_cycle:cycle}});
+    window.open(d.checkout_url,'_blank');
+    showBanner('Checkout opened — your plan activates after Stripe confirms payment.', true);
+  }catch(err){ showBanner(err.message) }
+};
+
+// ─────────────────────────── Boot ───────────────────────────
+(async function boot(){
+  const params = new URLSearchParams(location.search);
+  // Email verification / password reset deep links
+  if(params.get('token')){
+    showAuth('login');
+    try{
+      const r = await fetch('/auth/verify-email',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({token:params.get('token')})});
+      if(r.ok){ msg('#auth-msg','Email verified — you can log in now.', true); }
+      else { const d = await r.json(); msg('#auth-msg', d.error||d.detail||'Verification failed', false); }
+    }catch(e){ msg('#auth-msg','Verification failed', false) }
+    history.replaceState(null,'','/app.html');
+    return;
+  }
+  const hash = location.hash.slice(1);
+  if(hash==='signup'){ showAuth('signup'); return; }
+  if(hash==='login' || !S.token){ showAuth('login'); return; }
+  try{ showApp(); }catch(e){ showAuth('login') }
+})();
+</script>
+</body>
+</html>

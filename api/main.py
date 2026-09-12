@@ -1,188 +1,108 @@
-"""Main FastAPI application for QuoteFlow AI."""
+"""Main FastAPI application for QuoteFlow AI.
 
-import os
+Architecture:
+  - Public webhooks (Twilio SMS/voice, email, Stripe) — signature-verified.
+  - Authenticated multi-tenant API (JWT + RBAC + org scoping) under
+    /auth, /org, /quotes, /jobs, /billing, /dashboard.
+  - Legacy single-key admin endpoints have been removed; every
+    customer-owned read is now scoped to the caller's organization.
+"""
+
 import logging
-from typing import Optional, List
+import os
 from contextlib import asynccontextmanager
 from datetime import datetime
 
-from fastapi import FastAPI, HTTPException, Depends, status, Form, UploadFile, File, Request
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
 
 from core.conversation_manager import ConversationManager, ConversationStage, get_response
 from core.database import init_db
-from core.security import api_key_is_valid, required_secret, verify_email_webhook, verify_twilio_request
-from core.image_analyzer import get_analyzer
-from core.quote_calculator import QuoteCalculator
+from core.security import verify_email_webhook, verify_twilio_request
+from core.observability import configure_logging, observability_middleware, install_error_handlers
 from services.sms_handler import SMSHandler
 from services.email_processor import EmailProcessor
 from services.voice_handler import VoiceHandler
-from services.notification_service import NotificationService
-from materials.store_inventory import StoreFinder, StoreItem
-from payments.stripe_client import get_stripe_client, PaymentIntent
-from dashboard.api import router as dashboard_router
-from payments.billing import get_billing_manager, PLANS
+from workers.celery_tasks import process_photos_and_quote
 
-from materials.order_manager import OrderManager, AppointmentWithMaterials, get_order_manager
+from api.routes import (
+    auth_router, org_router, quotes_router,
+    jobs_router, billing_router, dashboard_router,
+    materials_router, assistant_router,
+)
 
-from workers.celery_tasks import process_photos_and_quote, daily_follow_ups
-
-logging.basicConfig(level=logging.INFO)
+configure_logging()
 logger = logging.getLogger("api")
-
-security = HTTPBearer()
-
-
-def verify_token(credentials: HTTPAuthorizationCredentials = Depends(security)):
-    if not api_key_is_valid(credentials.credentials):
-        raise HTTPException(status_code=401, detail="Invalid API key")
-    return credentials.credentials
-
-
-class TradeSelect(BaseModel):
-    customer_id: str
-    trade: str
-    phone: Optional[str] = None
-    email: Optional[str] = None
-
-
-class QuoteAccept(BaseModel):
-    customer_id: str
-    quote_id: str
-
-class MaterialsOrderRequest(BaseModel):
-    quote_id: str
-    trade: str
-    zip_code: str = ""
-
-
-class ScheduleRequest(BaseModel):
-    customer_id: str
-    customer_name: str
-    customer_phone: str
-    trade: str
-    quote_id: str
-    preferred_date: str  # ISO format
-    duration_hours: float = 4.0
-
-
-class PickupConfirm(BaseModel):
-    appointment_id: str
-
-class PaymentRequest(BaseModel):
-    quote_id: str
-    amount: float
-    customer_email: str
-    payment_type: str = "deposit"  # deposit, full
-    deposit_percent: float = 0.5
-
-
-class CheckoutRequest(BaseModel):
-    quote_id: str
-    amount: float
-    customer_email: str
-    success_url: str
-    cancel_url: str
-
-
-class ContractorSignup(BaseModel):
-    contractor_id: str
-    email: str
-    business_name: str
-    phone: str
-    plan: str = "starter"
-
-
-class PlanUpgrade(BaseModel):
-    contractor_id: str
-    plan: str
-    billing_cycle: str = "monthly"  # monthly, annual
-
-
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info("QuoteFlow AI starting...")
-    feedback_key = os.getenv("FEEDBACK_API_KEY", "").strip()
-    if not feedback_key or feedback_key.lower() in {"replace-me", "change-me"}:
-        logger.warning("FEEDBACK_API_KEY is not configured — admin endpoints will require setting this key")
-    
-    openai_key = os.getenv("OPENAI_API_KEY", "").strip()
-    if not openai_key or openai_key.lower() in {"replace-me", "change-me", "sk-..."}:
-        logger.warning("OPENAI_API_KEY is not configured — image analysis will use fallback/mock mode")
-
+    logger.info("QuoteFlow AI starting env=%s", os.getenv("APP_ENV", "development"))
+    if not os.getenv("JWT_SECRET", "").strip():
+        if os.getenv("APP_ENV") == "production":
+            raise RuntimeError("JWT_SECRET is required in production")
+        logger.warning("JWT_SECRET not set — using insecure dev secret (never in production)")
     await init_db()
     app.state.conversations = ConversationManager()
     app.state.sms = SMSHandler()
     app.state.email = EmailProcessor()
     app.state.voice = VoiceHandler()
-    app.state.notifier = NotificationService()
-    app.state.calculator = QuoteCalculator()
     yield
-    logger.info("QuoteFlow AI shutting down...")
+    logger.info("QuoteFlow AI shutting down")
 
 
 app = FastAPI(
     title="QuoteFlow AI",
     description="AI-powered quoting for small businesses. Customers send photos, AI analyzes and generates instant quotes.",
-    version="3.0.0",
+    version="4.0.0",
     lifespan=lifespan,
 )
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[origin.strip() for origin in os.getenv("CORS_ALLOW_ORIGINS", "*").split(",") if origin.strip()] or ["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type"],
 )
 
+app.middleware("http")(observability_middleware)
+install_error_handlers(app)
 
-@app.get("/")
-async def root():
+
+@app.get("/api")
+async def api_info():
+    """API discovery endpoint (the web landing page is served at '/')."""
     return {
         "service": "QuoteFlow AI",
-        "version": "3.0.0",
-        "description": "Send photos → AI analyzes → Instant quote via SMS/Email",
-        "trades": ["landscaping", "roofing", "plumbing", "autobody", "electrical"],
-        "endpoints": [
-            "/health",
-            "/webhook/sms",
-            "/webhook/email",
-            "/webhook/stripe",
-            "/voice/welcome",
-            "/voice/trade-select",
-            "/quote/start",
-            "/quote/accept",
-            "/materials/order",
-            "/appointments/schedule",
-            "/appointments/daily",
-            "/appointments/confirm-pickup",
-            "/materials/pending-pickups",
-            "/stores/search",
-            "/payments/create",
-            "/payments/checkout",
-            "/payments/refund",
-            "/plans",
-            "/contractors/signup",
-            "/contractors/upgrade",
-            "/contractors/{id}/status",
-            "/admin/conversations",
-            "/admin/analytics",
-        ],
+        "version": "4.1.0",
+        "docs": "/docs",
+        "app": "/app.html",
+        "public": ["/health", "/webhook/sms", "/webhook/email", "/webhook/stripe",
+                   "/voice/welcome", "/voice/trade-select", "/billing/plans"],
+        "authenticated": ["/auth", "/org", "/quotes", "/jobs", "/billing",
+                          "/dashboard", "/materials", "/assistant"],
     }
 
 
 @app.get("/health")
 async def health():
+    """Liveness + database readiness probe."""
+    from core.database import AsyncSessionLocal
+    from sqlalchemy import text
+    db_ok = True
+    try:
+        async with AsyncSessionLocal() as session:
+            await session.execute(text("SELECT 1"))
+    except Exception:
+        db_ok = False
     return {
-        "status": "healthy",
+        "status": "healthy" if db_ok else "degraded",
+        "database": "ok" if db_ok else "unreachable",
         "timestamp": datetime.utcnow().isoformat(),
-        "active_conversations": await app.state.conversations.get_active_count(),
     }
 
+
+# ─── Inbound webhooks (signature-verified, public) ──────────────────────────
 
 @app.post("/webhook/sms")
 async def webhook_sms(request: Request):
@@ -279,7 +199,7 @@ async def voice_welcome(request: Request):
 
 
 @app.post("/voice/trade-select")
-async def voice_trade_select(request: Request, Digits: str = Form(...)):
+async def voice_trade_select(request: Request, Digits: str = None):
     """Handle trade selection from phone keypad."""
     form = await request.form()
     await verify_twilio_request(request, {key: str(value) for key, value in form.items()})
@@ -290,388 +210,60 @@ async def voice_trade_select(request: Request, Digits: str = Form(...)):
         "4": "autobody",
         "5": "electrical",
     }
-    trade = trades.get(Digits, "unknown")
+    digits = Digits or form.get("Digits", "")
+    trade = trades.get(str(digits), "unknown")
     return app.state.voice.create_photo_instructions(trade)
-
-
-@app.post("/quote/start", dependencies=[Depends(verify_token)])
-async def start_quote(data: TradeSelect):
-    """Manually start a quote (for web dashboard)."""
-    conv = await app.state.conversations.get_or_create(
-        customer_id=data.customer_id,
-        phone=data.phone,
-        email=data.email,
-    )
-    await app.state.conversations.set_trade(data.customer_id, data.trade)
-    await app.state.conversations.update_stage(data.customer_id, ConversationStage.TRADE_SELECT)
-
-    from config.pricing_configs import get_trade_config
-    config = get_trade_config(data.trade)
-
-    return {
-        "customer_id": data.customer_id,
-        "trade": data.trade,
-        "required_photos": config.required_photos,
-        "message": f"Please send photos of: {', '.join(config.required_photos)}",
-    }
-
-
-@app.post("/quote/accept", dependencies=[Depends(verify_token)])
-async def accept_quote(data: QuoteAccept):
-    """Customer accepts a quote."""
-    conv = await app.state.conversations.get(data.customer_id)
-    if not conv or conv.quote_id != data.quote_id:
-        raise HTTPException(status_code=404, detail="Quote not found")
-
-    await app.state.conversations.update_stage(data.customer_id, ConversationStage.BOOKED)
-    return {
-        "status": "booked",
-        "quote_id": data.quote_id,
-        "customer_id": data.customer_id,
-        "next_steps": "An agent will contact you within 24 hours to schedule.",
-    }
-
-
-@app.get("/admin/conversations", dependencies=[Depends(verify_token)])
-async def list_conversations(stage: Optional[str] = None):
-    """List all conversations with optional filter."""
-    convs = await app.state.conversations.list_all()
-    if stage:
-        convs = [c for c in convs if c.stage.value == stage]
-    return {
-        "count": len(convs),
-        "conversations": [c.to_dict() for c in convs],
-    }
-
-
-@app.get("/admin/analytics", dependencies=[Depends(verify_token)])
-async def analytics():
-    """Get business analytics."""
-    convs = await app.state.conversations.list_all()
-    return {
-        "total_conversations": len(convs),
-        "active": await app.state.conversations.get_active_count(),
-        "conversion_rate": round(await app.state.conversations.get_conversion_rate(), 2),
-        "by_stage": {stage.value: sum(c.stage == stage for c in convs) for stage in ConversationStage},
-    }
-
-
-@app.post("/admin/trigger-followups", dependencies=[Depends(verify_token)])
-async def trigger_followups():
-    """Manually trigger follow-up messages."""
-    result = daily_follow_ups.delay()
-    return {"task_id": result.id, "status": "queued"}
-
-
-
-
-# ─── MATERIALS & APPOINTMENTS ──────────────────────────────────
-
-@app.post("/materials/order", dependencies=[Depends(verify_token)])
-async def create_materials_order(data: MaterialsOrderRequest):
-    """Create a materials order for a quote."""
-    manager = get_order_manager()
-
-    # Get the quote (in production, fetch from DB)
-    # For now, we need to reconstruct from the quote_id
-    # This would normally fetch the saved quote
-
-    # Mock quote reconstruction for demo
-    from core.quote_calculator import QuoteCalculator
-    from core.image_analyzer import MockAnalyzer
-
-    analyzer = MockAnalyzer()
-    calc = QuoteCalculator()
-
-    analysis = await analyzer.analyze_image("fake.jpg", data.trade)
-    quote = calc.calculate(data.trade, "cust_001", analysis)
-    quote.quote_id = data.quote_id
-
-    order = await manager.create_materials_order(quote, data.trade, data.zip_code)
-
-    if not order:
-        return {"status": "no_materials_needed", "quote_id": data.quote_id}
-
-    return {
-        "status": "order_created",
-        "order_id": order.order_id,
-        "quote_id": order.quote_id,
-        "store": order.store_name,
-        "store_address": order.store_address,
-        "pickup_time": order.pickup_time,
-        "total": order.total,
-        "items": [
-            {
-                "name": item.name,
-                "brand": item.brand,
-                "price": item.price,
-                "aisle": item.aisle_location,
-            }
-            for item in order.items
-        ],
-    }
-
-
-@app.post("/appointments/schedule", dependencies=[Depends(verify_token)])
-async def schedule_appointment(data: ScheduleRequest):
-    """Schedule an appointment with materials pickup."""
-    from datetime import datetime
-
-    manager = get_order_manager()
-    date = datetime.fromisoformat(data.preferred_date)
-
-    appointment = manager.schedule_appointment_with_pickup(
-        customer_id=data.customer_id,
-        customer_name=data.customer_name,
-        customer_phone=data.customer_phone,
-        trade=data.trade,
-        quote_id=data.quote_id,
-        preferred_date=date,
-        duration_hours=data.duration_hours,
-    )
-
-    return {
-        "appointment_id": appointment.appointment_id,
-        "scheduled_date": appointment.scheduled_date.isoformat(),
-        "materials_order_id": appointment.materials_order.order_id if appointment.materials_order else None,
-        "pickup_reminder": manager.get_pickup_reminder(appointment) if appointment.materials_order else None,
-    }
-
-
-@app.get("/appointments/daily", dependencies=[Depends(verify_token)])
-async def get_daily_schedule(date: str):
-    """Get daily schedule with materials pickup info."""
-    from datetime import datetime
-
-    manager = get_order_manager()
-    query_date = datetime.fromisoformat(date)
-    appointments = manager.get_daily_schedule(query_date)
-
-    return {
-        "date": date,
-        "appointment_count": len(appointments),
-        "appointments": [
-            {
-                "id": apt.appointment_id,
-                "customer": apt.customer_name,
-                "phone": apt.customer_phone,
-                "trade": apt.trade,
-                "time": apt.scheduled_date.strftime("%I:%M %p"),
-                "duration": apt.estimated_duration_hours,
-                "materials_picked_up": apt.materials_confirmed,
-                "store": apt.materials_order.store_name if apt.materials_order else None,
-                "materials_total": apt.materials_order.total if apt.materials_order else 0,
-            }
-            for apt in appointments
-        ],
-    }
-
-
-@app.post("/appointments/confirm-pickup", dependencies=[Depends(verify_token)])
-async def confirm_pickup(data: PickupConfirm):
-    """Confirm materials have been picked up."""
-    manager = get_order_manager()
-    success = manager.confirm_pickup(data.appointment_id)
-
-    return {
-        "status": "confirmed" if success else "not_found",
-        "appointment_id": data.appointment_id,
-    }
-
-
-@app.get("/materials/pending-pickups", dependencies=[Depends(verify_token)])
-async def pending_pickups():
-    """Get all appointments with pending material pickups."""
-    manager = get_order_manager()
-    pending = manager.get_pending_pickups()
-
-    return {
-        "count": len(pending),
-        "pickups": [
-            {
-                "appointment_id": apt.appointment_id,
-                "customer": apt.customer_name,
-                "trade": apt.trade,
-                "date": apt.scheduled_date.isoformat(),
-                "store": apt.materials_order.store_name if apt.materials_order else None,
-                "store_address": apt.materials_order.store_address if apt.materials_order else None,
-                "order_id": apt.materials_order.order_id if apt.materials_order else None,
-            }
-            for apt in pending
-        ],
-    }
-
-
-@app.get("/stores/search", dependencies=[Depends(verify_token)])
-async def search_stores(query: str, zip_code: str, trade: str = ""):
-    """Search local stores for materials."""
-    finder = StoreFinder(zip_code=zip_code)
-    results = await finder.find_materials(trade, [query])
-
-    items = results.get(query, [])
-    return {
-        "query": query,
-        "zip_code": zip_code,
-        "results_count": len(items),
-        "results": [
-            {
-                "sku": item.sku,
-                "name": item.name,
-                "brand": item.brand,
-                "price": item.price,
-                "in_stock": item.in_stock,
-                "store": item.store_name,
-                "address": item.store_address,
-                "distance_miles": item.distance_miles,
-                "aisle": item.aisle_location,
-            }
-            for item in items[:10]
-        ],
-    }
-
-
-
-
-# ─── PAYMENTS ──────────────────────────────────────────────────
-
-@app.post("/payments/create", dependencies=[Depends(verify_token)])
-async def create_payment(data: PaymentRequest):
-    """Create a payment intent for quote acceptance."""
-    if os.getenv("PAYMENTS_ENABLED", "false").lower() != "true":
-        raise HTTPException(status_code=503, detail="Payments are disabled until server-side quote pricing is enabled")
-    stripe = get_stripe_client()
-
-    if data.payment_type == "deposit":
-        intent = await stripe.create_deposit_intent(
-            quote_id=data.quote_id,
-            total_amount=data.amount,
-            deposit_percent=data.deposit_percent,
-            customer_email=data.customer_email,
-            description=f"Deposit for Quote #{data.quote_id}",
-        )
-    else:
-        intent = await stripe.create_quote_payment(
-            quote_id=data.quote_id,
-            amount=data.amount,
-            customer_email=data.customer_email,
-            description=f"Payment for Quote #{data.quote_id}",
-        )
-
-    return {
-        "client_secret": intent.client_secret,
-        "payment_intent_id": intent.id,
-        "amount": intent.amount,
-        "status": intent.status,
-    }
-
-
-@app.post("/payments/checkout", dependencies=[Depends(verify_token)])
-async def create_checkout(data: CheckoutRequest):
-    """Create a Stripe Checkout session for customer payment."""
-    if os.getenv("PAYMENTS_ENABLED", "false").lower() != "true":
-        raise HTTPException(status_code=503, detail="Payments are disabled until server-side quote pricing is enabled")
-    stripe = get_stripe_client()
-
-    session = await stripe.create_checkout_session(
-        quote_id=data.quote_id,
-        amount=data.amount,
-        customer_email=data.customer_email,
-        success_url=data.success_url,
-        cancel_url=data.cancel_url,
-    )
-
-    return {
-        "checkout_url": session["url"],
-        "session_id": session["session_id"],
-    }
-
-
-@app.post("/payments/refund", dependencies=[Depends(verify_token)])
-async def refund_payment(payment_intent_id: str, amount: Optional[float] = None):
-    """Refund a payment (partial or full)."""
-    if os.getenv("PAYMENTS_ENABLED", "false").lower() != "true":
-        raise HTTPException(status_code=503, detail="Payments are disabled until server-side quote pricing is enabled")
-    stripe = get_stripe_client()
-    result = await stripe.refund_payment(payment_intent_id, amount)
-    return result
 
 
 @app.post("/webhook/stripe")
 async def stripe_webhook(request: Request):
-    """Handle Stripe webhooks for payment events."""
+    """Stripe webhooks: signature-verified, idempotent, authoritative (GATE 5)."""
     payload = await request.body()
-    sig_header = request.headers.get("stripe-signature")
+    sig_header = request.headers.get("stripe-signature", "")
 
-    stripe = get_stripe_client()
+    from payments.stripe_gateway import get_gateway, GatewayError
+    from payments.billing import get_billing_service
+    from core.database import AsyncSessionLocal
 
     try:
-        event = stripe.verify_webhook(payload, sig_header)
-        result = stripe.handle_webhook_event(event)
-        return {"status": "processed", "result": result}
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        gateway = get_gateway()
+    except GatewayError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+
+    try:
+        event = gateway.construct_event(payload, sig_header)
+    except Exception:
+        logger.warning("stripe webhook rejected: invalid signature")
+        raise HTTPException(status_code=400, detail="Invalid webhook signature")
+
+    async with AsyncSessionLocal() as session:
+        result = await get_billing_service().handle_webhook(session, event)
+        await session.commit()
+    return {"status": "processed", "result": result}
 
 
-# ─── SAAS BILLING ──────────────────────────────────────────────
+# ─── Authenticated multi-tenant API ─────────────────────────────────────────
 
-@app.get("/plans")
-async def list_plans():
-    """List available subscription plans."""
-    return {
-        "plans": [
-            {
-                "id": plan.id,
-                "name": plan.name,
-                "price_monthly": plan.price_monthly,
-                "price_annual": plan.price_annual,
-                "features": plan.features,
-                "limits": plan.limits,
-            }
-            for plan in PLANS.values()
-        ]
-    }
+app.include_router(auth_router)
+app.include_router(org_router)
+app.include_router(quotes_router)
+app.include_router(jobs_router)
+app.include_router(billing_router)
+app.include_router(dashboard_router)
+app.include_router(materials_router)
+app.include_router(assistant_router)
 
+# ─── Static frontend (landing page + app UI) ────────────────────────────────
+# Mounted LAST so all API routes above take precedence; serves index.html
+# at '/' and /app.html for the web app.
+from pathlib import Path
+from fastapi.staticfiles import StaticFiles
 
-@app.post("/contractors/signup", dependencies=[Depends(verify_token)])
-async def signup_contractor(data: ContractorSignup):
-    """Create a new contractor account."""
-    billing = get_billing_manager()
-    account = billing.create_account(
-        contractor_id=data.contractor_id,
-        email=data.email,
-        business_name=data.business_name,
-        phone=data.phone,
-        plan=data.plan,
-    )
-    return {
-        "status": "created",
-        "contractor_id": account.contractor_id,
-        "plan": account.plan,
-        "trial_ends_at": account.trial_ends_at,
-    }
-
-
-@app.post("/contractors/upgrade", dependencies=[Depends(verify_token)])
-async def upgrade_contractor(data: PlanUpgrade):
-    """Upgrade contractor subscription."""
-    billing = get_billing_manager()
-    result = await billing.upgrade_plan(
-        contractor_id=data.contractor_id,
-        new_plan=data.plan,
-        billing_cycle=data.billing_cycle,
-    )
-    return result
-
-
-@app.get("/contractors/{contractor_id}/status", dependencies=[Depends(verify_token)])
-async def contractor_status(contractor_id: str):
-    """Get contractor account status and usage."""
-    billing = get_billing_manager()
-    return billing.get_account_status(contractor_id)
-
-
-# Include dashboard router
-app.include_router(dashboard_router, dependencies=[Depends(verify_token)])
+_static_dir = Path(__file__).resolve().parent.parent / "frontend" / "static"
+if _static_dir.is_dir():
+    app.mount("/", StaticFiles(directory=str(_static_dir), html=True), name="frontend")
+else:  # pragma: no cover
+    logger.warning("frontend/static not found — web UI not served")
 
 
 if __name__ == "__main__":

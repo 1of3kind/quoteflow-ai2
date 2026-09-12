@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>QuoteFlow AI — Instant AI quotes for service businesses</title>
+<meta name="description" content="Customers send photos. QuoteFlow's AI analyzes the job and generates a professional, explainable quote in under 2 minutes. Multi-tenant SaaS for landscaping, roofing, plumbing, auto body and electrical.">
+<style>
+  :root{
+    --bg:#0b1220; --panel:#111a2e; --panel2:#16233c; --line:#243350;
+    --text:#e8eefc; --muted:#93a4c3; --brand:#3b82f6; --brand2:#22d3ee;
+    --ok:#34d399; --warn:#fbbf24;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Segoe UI',system-ui,-apple-system,Arial,sans-serif;background:var(--bg);color:var(--text);line-height:1.6}
+  a{color:var(--brand2);text-decoration:none}
+  .wrap{max-width:1080px;margin:0 auto;padding:0 24px}
+  header{position:sticky;top:0;background:rgba(11,18,32,.92);backdrop-filter:blur(8px);border-bottom:1px solid var(--line);z-index:10}
+  .nav{display:flex;align-items:center;justify-content:space-between;height:64px}
+  .logo{font-weight:700;font-size:1.25rem;letter-spacing:-.02em}
+  .logo span{color:var(--brand2)}
+  .nav .actions{display:flex;gap:12px;align-items:center}
+  .btn{display:inline-block;padding:10px 18px;border-radius:10px;font-weight:600;border:1px solid var(--line);cursor:pointer;font-size:.95rem}
+  .btn.primary{background:linear-gradient(135deg,var(--brand),var(--brand2));border:none;color:#04121f}
+  .btn.ghost{color:var(--text)}
+  .btn:hover{filter:brightness(1.1)}
+  .hero{padding:88px 0 64px;text-align:center;background:
+    radial-gradient(600px 300px at 20% 0%, rgba(59,130,246,.18), transparent),
+    radial-gradient(600px 300px at 80% 10%, rgba(34,211,238,.14), transparent)}
+  .hero h1{font-size:clamp(2rem,5vw,3.4rem);line-height:1.15;letter-spacing:-.03em;max-width:820px;margin:0 auto}
+  .hero h1 em{font-style:normal;background:linear-gradient(135deg,var(--brand),var(--brand2));-webkit-background-clip:text;background-clip:text;color:transparent}
+  .hero p.lead{max-width:640px;margin:20px auto 0;color:var(--muted);font-size:1.15rem}
+  .hero .cta{margin-top:32px;display:flex;gap:14px;justify-content:center;flex-wrap:wrap}
+  .example{margin:40px auto 0;max-width:620px;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px 20px;text-align:left;box-shadow:0 10px 30px rgba(0,0,0,.35)}
+  .example .you{color:var(--muted);font-size:.85rem;margin-bottom:6px}
+  .example .q{font-size:1.05rem}
+  .example .a{margin-top:12px;border-top:1px dashed var(--line);padding-top:12px;font-size:.95rem;color:var(--ok)}
+  section{padding:72px 0;border-top:1px solid var(--line)}
+  h2{font-size:1.9rem;letter-spacing:-.02em;text-align:center;margin-bottom:10px}
+  .sub{color:var(--muted);text-align:center;max-width:620px;margin:0 auto 44px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:18px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:22px}
+  .card h3{font-size:1.05rem;margin-bottom:8px}
+  .card p{color:var(--muted);font-size:.95rem}
+  .card .icon{font-size:1.6rem;margin-bottom:10px}
+  .flow{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;align-items:center;margin-top:24px}
+  .flow .step{background:var(--panel2);border:1px solid var(--line);border-radius:999px;padding:8px 16px;font-size:.9rem}
+  .flow .arrow{color:var(--brand2)}
+  .pricing-note{text-align:center;color:var(--muted);margin-top:18px;font-size:.9rem}
+  table.plans{width:100%;border-collapse:collapse;margin-top:20px}
+  table.plans th,table.plans td{padding:12px 14px;text-align:center;border-bottom:1px solid var(--line)}
+  table.plans th{color:var(--muted);font-weight:600}
+  footer{padding:40px 0;color:var(--muted);font-size:.9rem;text-align:center;border-top:1px solid var(--line)}
+  .badge{display:inline-block;background:var(--panel2);border:1px solid var(--line);color:var(--brand2);border-radius:999px;padding:4px 14px;font-size:.85rem;margin-bottom:18px}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap nav">
+    <div class="logo">Quote<span>Flow</span> AI</div>
+    <div class="actions">
+      <a class="btn ghost" href="/app.html#login">Log in</a>
+      <a class="btn primary" href="/app.html#signup">Start free trial</a>
+    </div>
+  </div>
+</header>
+
+<div class="hero">
+  <div class="wrap">
+    <div class="badge">14-day free trial · no credit card required</div>
+    <h1>Send photos. Get an <em>instant, explainable quote.</em></h1>
+    <p class="lead">QuoteFlow AI turns customer photos into professional quotes in under 2 minutes — with every price fully explainable. Built for landscaping, roofing, plumbing, auto body, and electrical businesses.</p>
+    <div class="cta">
+      <a class="btn primary" href="/app.html#signup">Create your company →</a>
+      <a class="btn ghost" href="#how">See how it works</a>
+    </div>
+    <div class="example">
+      <div class="you">You type:</div>
+      <div class="q">“Create a quote for John Smith. Replace the water heater and schedule it for Tuesday.”</div>
+      <div class="a">✓ Quote created · $1,842.00 · Job scheduled Tuesday — done.</div>
+    </div>
+  </div>
+</div>
+
+<section id="how">
+  <div class="wrap">
+    <h2>How it works</h2>
+    <p class="sub">From first photo to scheduled job — one connected workflow.</p>
+    <div class="flow">
+      <div class="step">📸 Customer sends photos</div><div class="arrow">→</div>
+      <div class="step">🤖 AI analyzes the job</div><div class="arrow">→</div>
+      <div class="step">🧮 Pricing engine quotes it</div><div class="arrow">→</div>
+      <div class="step">✅ Customer approves</div><div class="arrow">→</div>
+      <div class="step">📅 Job scheduled</div><div class="arrow">→</div>
+      <div class="step">📦 Materials ordered</div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>Why QuoteFlow</h2>
+    <p class="sub">Not a black box — a defensible pricing engine and a real SaaS workflow.</p>
+    <div class="grid">
+      <div class="card"><div class="icon">🧮</div><h3>Explainable pricing</h3><p>Skill × hours + materials + overhead + target margin = price. Every quote ships a plain-English explanation you can defend to any customer.</p></div>
+      <div class="card"><div class="icon">💬</div><h3>AI assistant</h3><p>Type what you want in plain English. QuoteFlow creates the quote, schedules the job, and sends it — using your own permissions and rates.</p></div>
+      <div class="card"><div class="icon">🏢</div><h3>Your company, isolated</h3><p>Multi-tenant by design: your users, customers, jobs, rates, and settings are yours alone. Roles from owner to employee.</p></div>
+      <div class="card"><div class="icon">📦</div><h3>Materials &amp; suppliers</h3><p>Catalog with SKUs, prices and live availability. Orders flow draft → placed → confirmed → received.</p></div>
+      <div class="card"><div class="icon">📅</div><h3>Smart scheduling</h3><p>Jobs declare required skills and hours. QuoteFlow finds available workers and flags conflicts before you book the crew.</p></div>
+      <div class="card"><div class="icon">💳</div><h3>Simple billing</h3><p>Start free for 14 days. Upgrade, downgrade, or cancel anytime through the billing portal.</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="pricing">
+  <div class="wrap">
+    <h2>Pricing</h2>
+    <p class="sub">Plans that grow with your crew. Annual billing saves 20%.</p>
+    <table class="plans" id="plans-table">
+      <thead><tr><th>Plan</th><th>Monthly</th><th>Annual</th><th>Includes</th></tr></thead>
+      <tbody></tbody>
+    </table>
+    <p class="pricing-note">Loading live plans…</p>
+    <div class="cta" style="text-align:center;margin-top:28px">
+      <a class="btn primary" href="/app.html#signup">Start your free trial</a>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    QuoteFlow AI — instant quoting for service businesses.<br>
+    <a href="/app.html#login">Log in</a> · <a href="/app.html#signup">Sign up</a> · <a href="/docs">API docs</a>
+  </div>
+</footer>
+
+<script>
+fetch('/billing/plans').then(r=>r.json()).then(d=>{
+  const tbody=document.querySelector('#plans-table tbody');
+  tbody.innerHTML=d.plans.map(p=>`<tr>
+    <td><strong>${p.name}</strong></td>
+    <td>${p.price_monthly===0?'Free':'$'+p.price_monthly}</td>
+    <td>${p.price_annual===0?'—':'$'+p.price_annual}</td>
+    <td style="text-align:left;color:var(--muted)">${p.features.join(' · ')}</td>
+  </tr>`).join('');
+  document.querySelector('.pricing-note').textContent='All plans start with a 14-day free trial.';
+}).catch(()=>{document.querySelector('.pricing-note').textContent='Plans unavailable right now.'});
+</script>
+</body>
+</html>

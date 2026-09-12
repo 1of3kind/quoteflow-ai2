@@ -14,11 +14,59 @@ AI-powered instant quoting for small businesses. Customers text, email, or call 
 
 ## How It Works
 
-1. **Customer sends photos** via SMS, email, or voice call prompt
-2. **AI analyzes images** using GPT-4 Vision (or mock for testing)
-3. **Quote engine applies** trade-specific pricing formulas
-4. **Customer receives quote** via their original channel (SMS/email)
-5. **Follow-up automation** nudges pending quotes after 48 hours
+1. **Sign up** — creates your organization, owner account, default skills/rates, and a 14-day trial
+2. **Customer sends photos** via SMS, email, or voice call prompt
+3. **AI analyzes images** using GPT-4 Vision (or mock for testing)
+4. **The pricing engine** (`core/pricing_engine.py`) computes the quote:
+   `labor + materials + overhead → target margin → recommended price`
+   Every quote stores its exact inputs and can be explained/replayed via
+   `GET /quotes/{id}/explain`
+5. **Customer receives the quote**, approves it, and the workflow creates the
+   job, materials order, and schedule automatically
+
+## Web Frontend
+
+The API serves the web UI directly (no separate build step):
+
+- `/` — marketing landing page: hero, how-it-works, feature grid, and a pricing table loaded live from `/billing/plans`.
+- `/app.html` — the application: signup/login (with email-verification and password-reset deep links), dashboard (stats, upcoming jobs, activity, onboarding checklist), AI assistant chat, quote creation + send/accept/explain, jobs, day schedule with crew assignment, materials (suppliers, catalog, orders), customers, org settings, and billing.
+
+Static files are mounted **after** all API routes, so the API always takes precedence. `tests/test_frontend.py` verifies serving, API/static coexistence, and that the app JavaScript parses (via `node --check` when Node is available).
+
+## Growth Features
+
+- **AI assistant** — `POST /assistant/command` with plain English
+  ("Create a quote for John Smith. Replace the water heater and schedule it
+  for Tuesday.") executes the real workflow — customer lookup/creation,
+  engine-priced quote, scheduling, sending — using the caller's own
+  permissions. Deterministic parser built in; set `OPENAI_API_KEY` +
+  `ASSISTANT_USE_LLM=true` for LLM-based extraction.
+- **Quote explanation** — every quote ships a one-paragraph narrative
+  ("Your recommended price is $1,516.56 because labor is…"); see
+  `GET /quotes/{id}/explain`.
+- **Material ordering** — org-scoped suppliers, SKU catalog with live
+  availability, and an enforced order lifecycle
+  (`draft → placed → confirmed → received`) under `/materials/*`.
+- **Scheduling** — jobs declare required skills/hours
+  (`POST /jobs/{id}/requirements`), the API suggests available workers for
+  the job's time window (`GET /jobs/{id}/suggestions`), assignments
+  conflict-check against overlapping jobs, and `GET /jobs/schedule/day`
+  renders the day's crew plan.
+
+## Multi-Tenant SaaS Architecture
+
+Every customer is an isolated **Organization** with its own users, customers,
+jobs, quotes, materials, orders, documents, settings, and subscription.
+All tenant-owned queries are org-scoped (`core/database.py::get_scoped`);
+cross-tenant access returns 404 and is logged as a security event.
+Roles: `OWNER > ADMIN > MANAGER > EMPLOYEE` (matrix in `docs/RBAC.md`).
+Authentication: JWT access tokens, rotating refresh tokens, email
+verification, password reset, lockout, and rate limiting (`core/auth.py`).
+
+Billing is webhook-authoritative: Stripe Checkout + signed webhooks activate
+subscriptions (idempotent processing); failed payments trigger a grace
+period, then access restriction. See `docs/RUNBOOK.md` for operations
+(deployments, migrations, backups, monitoring, restore drills).
 
 ---
 
@@ -77,23 +125,25 @@ docker-compose up --build
 
 | Endpoint | Description |
 |----------|-------------|
-| `GET /health` | Service health & active conversation count |
-| `POST /webhook/sms` | Receive SMS + photos from customers |
-| `POST /webhook/email` | Receive emails with attachments |
-| `POST /webhook/stripe` | Stripe payment webhook |
-| `POST /voice/welcome` | Twilio voice IVR |
-| `POST /quote/start` | Manually initiate quote |
-| `POST /quote/accept` | Mark quote as booked |
-| `POST /materials/order` | Generate store materials order |
-| `POST /appointments/schedule` | Schedule appointment with pickup |
-| `GET /admin/conversations` | View all conversations |
-| `GET /admin/analytics` | Business metrics |
-| `GET /dashboard/metrics` | Retool dashboard KPI metrics |
+| `GET /health` | Liveness + database readiness |
+| `POST /auth/signup` | Create organization + owner (starts 14-day trial) |
+| `POST /auth/login` / `refresh` / `logout` | Session lifecycle |
+| `POST /auth/verify-email` / `forgot-password` / `reset-password` | Account recovery |
+| `GET /org` / `PATCH /org/pricing` / `GET /org/onboarding` | Organization settings & onboarding |
+| `POST /org/skills` · `/org/users` · `/org/customers` | Skills, team, customers (RBAC-enforced) |
+| `POST /quotes` · `GET /quotes/{id}/explain` | Engine-backed quotes + reproducible breakdown |
+| `POST /quotes/{id}/send` / `accept` / `materials-order` | Quote → document → job workflow |
+| `GET /jobs` · `PATCH /jobs/{id}` | Job scheduling & completion |
+| `GET /billing/plans` / `subscription` / `invoices` | Subscription status & history (OWNER) |
+| `POST /billing/checkout` / `portal` / `change-plan` / `cancel` | Stripe lifecycle (OWNER) |
+| `GET /dashboard/summary` | Active jobs, pending/approved quotes, revenue, profit |
+| `POST /webhook/stripe` | Signature-verified, idempotent Stripe webhooks |
+| `POST /webhook/sms` / `email`, `POST /voice/*` | Inbound channels (signature-verified) |
 
 ## Testing
 
 ```bash
-python -m pytest tests/test_all.py -v
+python -m pytest tests/ -v
 ```
 
 ## Environment Variables
