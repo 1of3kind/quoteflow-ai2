@@ -6,7 +6,7 @@ databases:
   - name: ezflow-db
     databaseName: ezflow
     user: ezflow
-    plan: basic-256mb        # paid: persistent storage + automated backups
+    plan: 0.1c-256mb         # paid: persistent storage + automated backups
     postgresMajorVersion: "16"
 
 services:
@@ -15,7 +15,7 @@ services:
   - type: web
     name: ezflow-api
     runtime: python
-    plan: starter             # paid
+    plan: 0.5c-512mb          # paid
     healthCheckPath: /health
     buildFilter:
       paths: ["**"]
@@ -88,7 +88,7 @@ services:
   - type: worker
     name: ezflow-worker
     runtime: python
-    plan: starter             # paid
+    plan: 0.5c-512mb          # paid
     buildCommand: pip install -r requirements.txt
     startCommand: celery -A workers.celery_tasks.celery_app worker --loglevel=info --concurrency 2
     envVars:
@@ -140,14 +140,14 @@ services:
   - type: keyvalue
     name: ezflow-redis
     ipAllowList: []
-    plan: hobby               # paid: persistent, survives restarts
+    plan: 256mb               # paid: persistent, survives restarts
     maxmemoryPolicy: noeviction
 
   # Celery Beat scheduler for automated follow-ups
   - type: worker
     name: ezflow-scheduler
     runtime: python
-    plan: starter             # paid
+    plan: 0.5c-512mb          # paid
     buildCommand: pip install -r requirements.txt
     startCommand: celery -A workers.celery_tasks.celery_app beat --loglevel=info
     envVars:
