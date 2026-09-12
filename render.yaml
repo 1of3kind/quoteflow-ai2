@@ -1,8 +1,13 @@
+# Render production blueprint (MUST-FIX #3/#4).
+# All instances are PAID tiers — Render free Postgres expires after 30 days
+# with no backups and free Key Value loses data on restart; this blueprint
+# must never be used to serve paying customers on free instances.
 databases:
   - name: ezflow-db
     databaseName: ezflow
     user: ezflow
-    plan: free
+    plan: basic-256mb        # paid: persistent storage + automated backups
+    postgresMajorVersion: "16"
 
 services:
 
@@ -10,19 +15,29 @@ services:
   - type: web
     name: ezflow-api
     runtime: python
-    plan: free
+    plan: starter             # paid
     healthCheckPath: /health
+    buildFilter:
+      paths: ["**"]
     buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn api.main:app --host 0.0.0.0 --port $PORT
+    startCommand: uvicorn api.main:app --host 0.0.0.0 --port $PORT --workers 2
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.0
       - key: PYTHONPATH
         value: /opt/render/project/src
+      - key: APP_ENV
+        value: production     # MUST-FIX #4: unambiguous production intent
+      - key: JWT_SECRET
+        generateValue: true   # MUST-FIX #4: strong random secret at deploy time
       - key: FEEDBACK_API_KEY
         generateValue: true
       - key: EMAIL_WEBHOOK_SECRET
         generateValue: true
+      # CORS MUST list the real frontend origin — the app refuses to boot in
+      # production with a wildcard (MUST-FIX #5).
+      - key: CORS_ALLOW_ORIGINS
+        sync: false
       - key: DATABASE_URL
         fromDatabase:
           name: ezflow-db
@@ -36,7 +51,7 @@ services:
         sync: false
       - key: PUBLIC_BASE_URL
         sync: false
-      - key: CORS_ALLOW_ORIGINS
+      - key: FRONTEND_BASE_URL
         sync: false
       - key: TWILIO_ACCOUNT_SID
         sync: false
@@ -48,27 +63,43 @@ services:
         sync: false
       - key: SENDGRID_API_KEY
         sync: false
+      - key: EMAIL_FROM
+        sync: false
       - key: STRIPE_SECRET_KEY
         sync: false
       - key: STRIPE_WEBHOOK_SECRET
         sync: false
+      - key: STRIPE_PRICE_PRO_MONTHLY
+        sync: false
+      - key: STRIPE_PRICE_PRO_ANNUAL
+        sync: false
+      - key: STRIPE_PRICE_BUSINESS_MONTHLY
+        sync: false
+      - key: STRIPE_PRICE_BUSINESS_ANNUAL
+        sync: false
       - key: PAYMENTS_ENABLED
-        value: "false"
-      - key: BUSINESS_NAME
-        value: E-ZFlow
+        value: "true"
+      - key: ALERT_WEBHOOK_URL
+        sync: false
+      - key: LOG_LEVEL
+        value: info
 
   # Background worker: Celery for async image processing
   - type: worker
     name: ezflow-worker
     runtime: python
-    plan: starter
+    plan: starter             # paid
     buildCommand: pip install -r requirements.txt
-    startCommand: celery -A workers.celery_tasks.celery_app worker --loglevel=info
+    startCommand: celery -A workers.celery_tasks.celery_app worker --loglevel=info --concurrency 2
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.0
       - key: PYTHONPATH
         value: /opt/render/project/src
+      - key: APP_ENV
+        value: production
+      - key: JWT_SECRET
+        generateValue: true
       - key: FEEDBACK_API_KEY
         fromService:
           type: web
@@ -109,14 +140,14 @@ services:
   - type: keyvalue
     name: ezflow-redis
     ipAllowList: []
-    plan: free
+    plan: hobby               # paid: persistent, survives restarts
     maxmemoryPolicy: noeviction
 
   # Celery Beat scheduler for automated follow-ups
   - type: worker
     name: ezflow-scheduler
     runtime: python
-    plan: starter
+    plan: starter             # paid
     buildCommand: pip install -r requirements.txt
     startCommand: celery -A workers.celery_tasks.celery_app beat --loglevel=info
     envVars:
@@ -124,6 +155,8 @@ services:
         value: 3.11.0
       - key: PYTHONPATH
         value: /opt/render/project/src
+      - key: APP_ENV
+        value: production
       - key: REDIS_URL
         fromService:
           type: keyvalue

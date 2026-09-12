@@ -6,7 +6,7 @@ import logging
 import secrets
 from datetime import datetime, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -238,24 +238,46 @@ async def explain_quote(quote_id: str,
 
 
 @router.post("/{quote_id}/send")
-async def send_quote(quote_id: str,
+async def send_quote(quote_id: str, request: Request,
                      ctx: AuthContext = Depends(require_permission("quotes:write")),
                      session: AsyncSession = Depends(get_session)):
+    """Send the quote and mint the customer approval token (MUST-FIX #2).
+
+    The customer approves via /q/{quote_id}/{token} — no employee login.
+    Only the SHA-256 hash of the token is stored; the raw token exists only
+    in the approval URL handed to the customer.
+    """
+    import os
+    from core.auth import generate_token_value, token_digest
+
     q = await scoped_or_404(session, QuoteModel, quote_id, ctx, "Quote")
     if q.status not in ("draft", "sent"):
         raise HTTPException(status_code=409, detail=f"Cannot send a quote in status {q.status}")
     q.status = "sent"
     q.sent_at = datetime.utcnow()
-    document = await build_quote_document(session, q)
+
+    # Issue (or re-issue on resend) the single-purpose approval token.
+    raw_token = generate_token_value()
+    q.approval_token_hash = token_digest(raw_token)
+    q.approval_token_expires_at = q.expires_at or (
+        datetime.utcnow() + timedelta(days=q.valid_days or 14))
+    q.approval_revoked_at = None
+
+    base_url = os.getenv("PUBLIC_BASE_URL", "").rstrip("/") or str(request.base_url).rstrip("/")
+    approval_url = f"{base_url}/q/{q.quote_id}/{raw_token}"
+
+    document = await build_quote_document(session, q, approval_url=approval_url)
     session.add(DocumentModel(organization_id=ctx.organization_id,
                               related_type="quote", related_id=q.quote_id,
                               content=document))
     await audit(session, "quote.sent", ctx=ctx, quote_id=q.quote_id)
     await session.commit()
-    return {"status": "sent", "quote_id": q.quote_id, "document": document}
+    return {"status": "sent", "quote_id": q.quote_id,
+            "approval_url": approval_url, "document": document}
 
 
-async def build_quote_document(session: AsyncSession, q: QuoteModel) -> dict:
+async def build_quote_document(session: AsyncSession, q: QuoteModel,
+                               approval_url: str | None = None) -> dict:
     """The professional customer-facing quote (GATE 10)."""
     org = await session.get(OrganizationModel, q.organization_id)
     customer = await session.get(OrgCustomerModel, q.org_customer_id) if q.org_customer_id else None
@@ -299,18 +321,21 @@ async def build_quote_document(session: AsyncSession, q: QuoteModel) -> dict:
         "explanation": result.get("explanation", []),
         "narrative": result.get("narrative", ""),
         "approval": {
-            "accept_endpoint": f"/quotes/{q.quote_id}/accept",
-            "instructions": "Reply ACCEPT or click the approval link to book this work.",
+            "url": approval_url,
+            "accept_endpoint": f"/q/{q.quote_id}/<token>/approve",
+            "instructions": "Click the approval link (or reply ACCEPT) to book this work. The link is valid until the quote expires.",
         },
     }
 
 
-@router.post("/{quote_id}/accept")
-async def accept_quote(quote_id: str,
-                       ctx: AuthContext = Depends(require_permission("quotes:write")),
-                       session: AsyncSession = Depends(get_session)):
-    """Approve → job created → materials order → schedule (GATE 10)."""
-    q = await scoped_or_404(session, QuoteModel, quote_id, ctx, "Quote")
+async def _accept_quote_for_customer(session: AsyncSession, q: QuoteModel,
+                                     via: str, user_id: str | None = None) -> dict:
+    """Shared acceptance path: customer link, SMS reply, or an employee.
+
+    Validates state and expiry, marks accepted, creates the job, and bumps
+    onboarding. Caller commits. (MUST-FIX #2: one authoritative path so a
+    customer's approval really accepts the quote.)
+    """
     if q.status == "accepted":
         return {"status": "already_accepted", "quote_id": q.quote_id, "job_id": q.job_id}
     if q.status != "sent":
@@ -323,27 +348,32 @@ async def accept_quote(quote_id: str,
 
     q.status = "accepted"
     q.accepted_at = datetime.utcnow()
+    q.approved_via = via
 
     job = JobModel(
-        organization_id=ctx.organization_id,
+        organization_id=q.organization_id,
         org_customer_id=q.org_customer_id,
         quote_id=q.quote_id,
         trade=q.trade,
         title=q.title,
         description=q.notes,
         status="draft",
-        created_by=ctx.user_id,
+        created_by=user_id,
     )
     session.add(job)
     await session.flush()
     q.job_id = job.id
 
-    org = await session.get(OrganizationModel, ctx.organization_id)
-    done = set(org.onboarding or [])
-    done.add("first_quote_approved")
-    org.onboarding = list(done)
+    org = await session.get(OrganizationModel, q.organization_id)
+    if org:
+        done = set(org.onboarding or [])
+        done.add("first_quote_approved")
+        org.onboarding = list(done)
 
-    await audit(session, "quote.accepted", ctx=ctx, quote_id=q.quote_id, job_id=job.id)
+    from core.tenancy import audit
+    await audit(session, "quote.accepted",
+                organization_id=q.organization_id, user_id=user_id,
+                quote_id=q.quote_id, job_id=job.id, via=via)
     await session.commit()
 
     return {
@@ -355,6 +385,29 @@ async def accept_quote(quote_id: str,
             "POST /quotes/{quote_id}/materials-order to stage materials",
         ],
     }
+
+
+@router.post("/{quote_id}/accept")
+async def accept_quote(quote_id: str,
+                       ctx: AuthContext = Depends(require_permission("quotes:write")),
+                       session: AsyncSession = Depends(get_session)):
+    """Employee-side acceptance. Customers approve via /q/{quote_id}/{token}."""
+    q = await scoped_or_404(session, QuoteModel, quote_id, ctx, "Quote")
+    return await _accept_quote_for_customer(session, q, via="api", user_id=ctx.user_id)
+
+
+@router.post("/{quote_id}/revoke-approval")
+async def revoke_approval(quote_id: str,
+                          ctx: AuthContext = Depends(require_permission("quotes:write")),
+                          session: AsyncSession = Depends(get_session)):
+    """Revoke the customer approval link: the stored token hash is cleared
+    and any outstanding link stops working immediately."""
+    q = await scoped_or_404(session, QuoteModel, quote_id, ctx, "Quote")
+    q.approval_revoked_at = datetime.utcnow()
+    q.approval_token_hash = None
+    await audit(session, "quote.approval_revoked", ctx=ctx, quote_id=q.quote_id)
+    await session.commit()
+    return {"status": "revoked", "quote_id": q.quote_id}
 
 
 @router.post("/{quote_id}/materials-order", status_code=201)

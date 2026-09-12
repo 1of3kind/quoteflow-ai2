@@ -60,6 +60,7 @@ class Conversation:
     customer_email: Optional[str]
     trade: Optional[str]
     stage: ConversationStage
+    organization_id: Optional[str] = None
     messages: List[Message] = field(default_factory=list)
     photos_received: List[str] = field(default_factory=list)
     quote_id: Optional[str] = None
@@ -117,6 +118,7 @@ class Conversation:
             customer_email=model.customer_email,
             trade=model.trade,
             stage=ConversationStage(model.stage),
+            organization_id=getattr(model, "organization_id", None),
             messages=messages,
             photos_received=photos,
             quote_id=model.quote_id,
@@ -134,7 +136,15 @@ class ConversationManager:
         customer_id: str,
         phone: Optional[str] = None,
         email: Optional[str] = None,
+        organization_id: Optional[str] = None,
     ) -> Conversation:
+        """Load or create a conversation.
+
+        Inbound webhooks MUST resolve organization_id first (via
+        OrganizationChannelModel) and pass an org-scoped customer_id such as
+        'sms:<org_id>:<phone>' so the same customer phone texting two
+        different organizations gets two isolated conversations.
+        """
         async with database.AsyncSessionLocal() as session:
             result = await session.execute(
                 select(ConversationModel).where(ConversationModel.id == customer_id)
@@ -145,6 +155,7 @@ class ConversationManager:
                 now = datetime.utcnow()
                 model = ConversationModel(
                     id=customer_id,
+                    organization_id=organization_id,
                     customer_phone=phone,
                     customer_email=email,
                     trade=None,
@@ -155,7 +166,7 @@ class ConversationManager:
                 session.add(model)
                 await session.commit()
                 await session.refresh(model)
-                logger.info(f"Created conversation for {customer_id}")
+                logger.info("Created conversation for %s org=%s", customer_id, organization_id)
             elif phone and not model.customer_phone:
                 model.customer_phone = phone
                 await session.commit()

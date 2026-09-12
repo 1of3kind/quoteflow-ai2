@@ -169,6 +169,13 @@ class QuoteModel(Base):
     status = Column(String(32), nullable=False, default="draft", index=True)
     sent_at = Column(DateTime, nullable=True)
     accepted_at = Column(DateTime, nullable=True)
+    # Customer approval (MUST-FIX #2): the customer approves via a public
+    # token link — no employee login. Only the SHA-256 hash is stored;
+    # the raw token lives only in the approval URL sent to the customer.
+    approval_token_hash = Column(String(64), nullable=True, index=True)
+    approval_token_expires_at = Column(DateTime, nullable=True)
+    approval_revoked_at = Column(DateTime, nullable=True)
+    approved_via = Column(String(32), nullable=True)  # link | sms_reply | api
     notes = Column(Text, nullable=True)
     tier_applied = Column(String, nullable=True)
     created_by = Column(String(36), nullable=True)
@@ -418,6 +425,28 @@ class JobModel(Base):
     duration_hours = Column(Float, nullable=True)
     completed_at = Column(DateTime, nullable=True)
     created_by = Column(String(36), nullable=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+
+class OrganizationChannelModel(Base):
+    """Inbound channel owned by one organization (MUST-FIX: tenant routing).
+
+    Every public inbound SMS/voice number and inbound email address maps to
+    exactly one organization via channel_value. The webhooks resolve
+    provider + channel_value -> organization_id BEFORE any conversation is
+    created or loaded. Twilio authenticity proves the message came from
+    Twilio; this mapping proves whose customer it belongs to.
+    """
+
+    __tablename__ = "organization_channels"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    organization_id = Column(String(36), ForeignKey("organizations.id"), nullable=False, index=True)
+    provider = Column(String(16), nullable=False)  # sms | voice | email
+    # The inbound identifier: E.164 phone number or email address
+    channel_value = Column(String(320), nullable=False, unique=True, index=True)
+    provider_sid = Column(String(120), nullable=True)  # e.g. Twilio Phone Number SID (PN...)
+    active = Column(Boolean, nullable=False, default=True)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
 
 

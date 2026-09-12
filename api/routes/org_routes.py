@@ -14,7 +14,7 @@ from core.auth import hash_password, client_ip, validate_password_strength, gene
 from core.database import (
     get_session, OrganizationModel, UserModel, SkillRateModel,
     OrgCustomerModel, AuthTokenModel, JobModel, ONBOARDING_STEPS,
-    DEFAULT_ORG_SETTINGS, count_scoped,
+    DEFAULT_ORG_SETTINGS, count_scoped, OrganizationChannelModel,
 )
 from core.rbac import Role, require_permission, ALL_ROLES
 from core.tenancy import AuthContext, get_current_user, scoped_or_404, audit
@@ -322,6 +322,65 @@ async def delete_customer(customer_id: str,
     c = await scoped_or_404(session, OrgCustomerModel, customer_id, ctx, "Customer")
     await session.delete(c)
     await audit(session, "org.customer_deleted", ctx=ctx, customer_id=customer_id)
+    await session.commit()
+
+
+# ─── Inbound channels (MUST-FIX: tenant routing for SMS/email) ──────────────
+
+class ChannelIn(BaseModel):
+    provider: str = Field(pattern="^(sms|voice|email)$")
+    channel_value: str = Field(min_length=3, max_length=320)
+    provider_sid: str | None = Field(default=None, max_length=120)
+
+
+@router.get("/channels")
+async def list_channels(ctx: AuthContext = Depends(require_permission("org:read")),
+                        session: AsyncSession = Depends(get_session)):
+    channels = (await session.execute(
+        select(OrganizationChannelModel)
+        .where(OrganizationChannelModel.organization_id == ctx.organization_id)
+        .order_by(OrganizationChannelModel.created_at))).scalars().all()
+    return {"channels": [{
+        "id": c.id, "provider": c.provider, "channel_value": c.channel_value,
+        "provider_sid": c.provider_sid, "active": c.active,
+    } for c in channels]}
+
+
+@router.post("/channels", status_code=201)
+async def register_channel(body: ChannelIn, request: Request,
+                           ctx: AuthContext = Depends(require_permission("org:settings")),
+                           session: AsyncSession = Depends(get_session)):
+    """Claim an inbound phone number / email address for this organization.
+
+    Inbound messages to this value are routed to this org's tenant. A value
+    already claimed by any organization is rejected.
+    """
+    value = body.channel_value.strip().lower() if body.provider == "email" \
+        else body.channel_value.strip()
+    existing = (await session.execute(
+        select(OrganizationChannelModel).where(
+            OrganizationChannelModel.channel_value == value))).scalar()
+    if existing:
+        raise HTTPException(status_code=409,
+                            detail="This phone number / address is already registered")
+    channel = OrganizationChannelModel(
+        organization_id=ctx.organization_id, provider=body.provider,
+        channel_value=value, provider_sid=body.provider_sid)
+    session.add(channel)
+    await audit(session, "org.channel_registered", ctx=ctx, ip=client_ip(request),
+                provider=body.provider)
+    await session.commit()
+    return {"id": channel.id, "provider": channel.provider,
+            "channel_value": channel.channel_value}
+
+
+@router.delete("/channels/{channel_id}", status_code=204)
+async def deactivate_channel(channel_id: str,
+                             ctx: AuthContext = Depends(require_permission("org:settings")),
+                             session: AsyncSession = Depends(get_session)):
+    channel = await scoped_or_404(session, OrganizationChannelModel, channel_id, ctx, "Channel")
+    channel.active = False
+    await audit(session, "org.channel_deactivated", ctx=ctx, channel_id=channel_id)
     await session.commit()
 
 

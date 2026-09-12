@@ -12,7 +12,7 @@ import logging
 import secrets
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -42,7 +42,7 @@ class CommandIn(BaseModel):
 
 
 @router.post("/command")
-async def run_command(body: CommandIn,
+async def run_command(body: CommandIn, request: Request,
                       ctx: AuthContext = Depends(get_current_user),
                       session: AsyncSession = Depends(get_session)):
     """Interpret and execute: find/create customer → create quote →
@@ -141,7 +141,7 @@ async def run_command(body: CommandIn,
     # ── 5. Send the quote if requested ──
     if cmd.send_quote:
         from api.routes.quotes_routes import send_quote as send_quote_handler
-        sent = await send_quote_handler(quote_out["quote_id"], ctx, session)
+        sent = await send_quote_handler(quote_out["quote_id"], request, ctx, session)
         actions.append({"action": "quote_sent", "quote_id": quote_out["quote_id"]})
 
     await audit(session, "assistant.command_executed", ctx=ctx,
