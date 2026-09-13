@@ -77,6 +77,11 @@ services:
         sync: false
       - key: STRIPE_PRICE_BUSINESS_ANNUAL
         sync: false
+      # Interim: email delivery is not configured yet, so verification emails
+      # cannot be delivered. FLIP TO true once SENDGRID_API_KEY + a verified
+      # sender domain are set — required before serving real customers.
+      - key: REQUIRE_VERIFIED_EMAIL
+        value: "false"
       - key: PAYMENTS_ENABLED
         value: "true"
       - key: ALERT_WEBHOOK_URL

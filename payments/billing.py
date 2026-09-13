@@ -93,8 +93,19 @@ class BillingError(ValueError):
 
 
 class BillingService:
+    """Subscription lifecycle. The Stripe gateway is resolved LAZILY: trials,
+    quotas, and status work with no Stripe configuration at all, and only
+    checkout/portal/plan-change/cancel/invoices require it (raising a clean
+    GatewayError -> 503 until STRIPE_SECRET_KEY is set)."""
+
     def __init__(self, gateway=None):
-        self.gateway = gateway or get_gateway()
+        self._gateway = gateway
+
+    @property
+    def gateway(self):
+        if self._gateway is None:
+            self._gateway = get_gateway()
+        return self._gateway
 
     # ── Trial & access control ─────────────────────────────────────────
 

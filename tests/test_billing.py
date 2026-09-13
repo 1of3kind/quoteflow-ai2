@@ -259,3 +259,35 @@ class TestInvoiceHistoryAndPortal:
         r = await client.post("/billing/portal", headers=org_a["headers"])
         assert r.status_code == 200
         assert "portal_url" in r.json()
+
+
+class TestNoStripeConfigured:
+    """Production regression: signup/trials must work with NO Stripe config.
+    Signup 500'd because BillingService eagerly constructed the gateway."""
+
+    async def test_trial_and_quota_work_without_gateway(self, client, org_a, monkeypatch):
+        from payments import billing as billing_mod
+        monkeypatch.delenv("STRIPE_SECRET_KEY", raising=False)
+        monkeypatch.delenv("STRIPE_MODE", raising=False)
+        monkeypatch.setattr(billing_mod, "_service", None)
+        # No gateway injected — the real singleton path with nothing configured
+        service = billing_mod.BillingService()
+        async with db.AsyncSessionLocal() as s:
+            sub = await service.ensure_subscription(s, org_a["org_id"])
+            await s.commit()
+            assert sub.status == "trialing"
+            allowance = await service.check_quote_allowance(s, org_a["org_id"])
+        assert allowance["allowed"] is True
+
+    async def test_checkout_requires_gateway_cleanly(self, client, org_a, monkeypatch):
+        from payments import billing as billing_mod
+        from payments.stripe_gateway import GatewayError
+        monkeypatch.delenv("STRIPE_SECRET_KEY", raising=False)
+        monkeypatch.delenv("STRIPE_MODE", raising=False)
+        monkeypatch.setattr(billing_mod, "_service", None)
+        monkeypatch.setattr(billing_mod, "get_gateway",
+                            lambda: (_ for _ in ()).throw(GatewayError("Stripe is not configured")))
+        service = billing_mod.BillingService()
+        async with db.AsyncSessionLocal() as s:
+            with pytest.raises(GatewayError):
+                await service.create_checkout(s, org_a["org_id"], "pro", "monthly", "http://test")
