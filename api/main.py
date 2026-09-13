@@ -82,6 +82,9 @@ install_error_handlers(app)
 @app.get("/api")
 async def api_info():
     """API discovery endpoint (the web landing page is served at '/')."""
+    def _configured(*names: str) -> bool:
+        return all(bool(os.getenv(n, "").strip()) for n in names)
+
     return {
         "service": "E-ZFlow",
         "version": "4.1.0",
@@ -91,6 +94,15 @@ async def api_info():
                    "/voice/welcome", "/voice/trade-select", "/billing/plans"],
         "authenticated": ["/auth", "/org", "/quotes", "/jobs", "/billing",
                           "/dashboard", "/materials", "/assistant"],
+        # Deployment health readout: presence booleans only — never values.
+        "integrations": {
+            "openai": _configured("OPENAI_API_KEY"),
+            "stripe": _configured("STRIPE_SECRET_KEY"),
+            "twilio": _configured("TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN"),
+            "sendgrid": _configured("SENDGRID_API_KEY"),
+            "assistant_llm": _configured("OPENAI_API_KEY")
+                             and os.getenv("ASSISTANT_USE_LLM", "false").lower() == "true",
+        },
     }
 
 

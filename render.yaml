@@ -49,6 +49,10 @@ services:
           property: connectionString
       - key: OPENAI_API_KEY
         sync: false
+      # Enables LLM parsing in the assistant. Safe to leave on: core.assistant
+      # falls back to the rules parser whenever OPENAI_API_KEY is unset.
+      - key: ASSISTANT_USE_LLM
+        value: "true"
       - key: PUBLIC_BASE_URL
         sync: false
       - key: FRONTEND_BASE_URL
