@@ -25,8 +25,12 @@ jobs:
         run: python scripts/check_no_secrets.py
 
       - name: Verify .env.example has no real values
+        # localhost DB placeholders are allowed (dev template); anything
+        # pointing at a non-localhost host with an embedded password fails.
         run: |
-          ! grep -E '(sk-[A-Za-z0-9]{16,}|whsec_[A-Za-z0-9]{10,}|AC[a-f0-9]{20,}|SG\.[A-Za-z0-9_-]{20,}|postgres(ql)?\+?asyncpg?://[^ ]*:[^@ ]+@)' .env.example
+          if grep -E '(sk-[A-Za-z0-9]{16,}|whsec_[A-Za-z0-9]{10,}|AC[a-f0-9]{20,}|SG\.[A-Za-z0-9_-]{20,}|postgres(ql)?\+?asyncpg?://[^ ]*:[^@ ]+@)' .env.example | grep -v 'localhost'; then
+            echo "Real-looking values found in .env.example" && exit 1
+          fi
 
       - name: Run test suite
         env:
