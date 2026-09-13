@@ -119,11 +119,11 @@ services:
           type: keyvalue
           name: ezflow-redis
           property: connectionString
+      # Optional at runtime (mock analyzer without it) — set independently on
+      # the worker; do NOT fromService-copy ezflow-api's value, because that
+      # fails blueprint sync while the variable is unset on the api service.
       - key: OPENAI_API_KEY
-        fromService:
-          type: web
-          name: ezflow-api
-          envVarKey: OPENAI_API_KEY
+        sync: false
       - key: TWILIO_ACCOUNT_SID
         sync: false
       - key: TWILIO_AUTH_TOKEN
